@@ -1,6 +1,6 @@
 from cavitygeometry import region_outside_cavity
 import ngsolve as ng
-from ngsolve import dx, ds, grad, BND, InnerProduct, sqrt
+from ngsolve import dx, ds, grad, BND, InnerProduct
 from ngsolve import CoefficientFunction as CF
 
 
@@ -15,7 +15,7 @@ rinv = 1.0 / ng.IfPos(r - threshold, r, threshold)
 
 # Tensor and vector shorthands #########################################
 
-def ip(a, b):
+def fip(a, b):
     """ Symmetric matrices of the form
             c = [c_rr  c_rz    0]
                 [c_rz  c_zz    0]
@@ -29,6 +29,15 @@ def ip(a, b):
     return arr*brr + 2*arz*brz + azz*bzz + aθθ*bθθ
 
 
+def ip(a, b):
+    """ Return the vector inner product, not Frobenius product
+    (more convenient when using SolveM). """
+
+    arr, arz, azz, aθθ = a
+    brr, brz, bzz, bθθ = b
+    return arr*brr + arz*brz + azz*bzz + aθθ*bθθ
+
+
 def mat3x3(s):
     """ Return the matrix representation of a 4-vector. """
 
@@ -36,6 +45,14 @@ def mat3x3(s):
     return CF((srr,   srz,      0,
                srz,   szz,      0,
                0,        0,   sθθ),  dims=(3, 3))
+
+
+def mat2x2(s):
+    """ Return matrix representation without hoop component. """
+
+    srr, srz, szz, sθθ = s
+    return CF((srr,   srz,
+               srz,   szz),  dims=(2, 2))
 
 
 def dev(s):
@@ -62,7 +79,7 @@ def ε(u):
     ur, uz = u
     drur, dzur = grad(ur)
     druz, dzuz = grad(uz)
-    return mat3x3((drur, (druz+dzur)/2, dzuz, ur * rinv))
+    return CF((drur, (druz+dzur)/2, dzuz, ur * rinv))
 
 
 def rε(u):
@@ -75,12 +92,15 @@ def rε(u):
 
 
 def divrz(u):
-    """ Return 2D divergence in the rz plane(not actual 3D div). """
+    """ Return 2D divergence in the rz plane (not actual 3D div). """
 
     ur, uz = u
     drur, dzur = grad(ur)
     druz, dzuz = grad(uz)
     return CF(drur + dzuz)
+
+
+# Class for Axisymmetric Viscoelastic Maxwell Model ####################
 
 
 class AxisymViscElas:
@@ -123,7 +143,7 @@ class AxisymViscElas:
 
         self.SU = ng.FESpace([self.S, self.U])
 
-        print('  Setting up static solve system')
+        print('  Setting up static elastic system')
         u, v = self.U.TnT()
         ur = u[0]
         vr = v[0]
@@ -156,9 +176,132 @@ class AxisymViscElas:
         """
         srr, srz, szz, sθθ = s
         t = srr + szz + sθθ
-        return 2 * self.mu * s + self.lam * t * CF((1, 0, 1, 1))
+        return CF((2 * self.mu * srr + self.lam * t,
+                   2 * self.mu * srz,
+                   2 * self.mu * szz + self.lam * t,
+                   2 * self.mu * sθθ + self.lam * t))
 
     def CeAv(self, s):
-        """ Return Ce(Av(s)), in simplified form: Ce(Av(s)) = (dev s) / τ.
+        """ Return Ce(Av(s)) in simplified form: Ce(Av(s)) = (dev s) / τ.
         """
         return dev(s) / self.tau
+
+    def primalsolve(self, F=None, kinematicBC=None, tractionBC=None):
+        """ Solve the standard axisymmetric displacement formulation
+        for the linear (not viscoelastic) elastic problem with input
+        load (vector F) and boundary data (inpu tin kinematicBC and/or
+        tractionBC in the respective boundary parts of this object).
+        """
+
+        if len(self.σbdry) and tractionBC is None:
+            raise ValueError('Traction BC must be input since ' +
+                             'tractionBCparts is not empty.')
+
+        u = ng.GridFunction(self.U)
+        self.setkinematicbc(u, kinematicBC)
+        f = ng.LinearForm(self.U)
+        if F is not None:
+            v = self.U.TestFunction()
+            f += InnerProduct(F, v) * r * drdz
+        with ng.TaskManager():
+            f.Assemble()
+        return self.staticsolve(f.vec, u)
+
+    def staticsolve(self, f, u):
+        with ng.TaskManager():
+            f.data -= self.a.mat * u.vec
+            u.vec.data += self.ainv * f
+        return u
+
+    def setkinematicbc(self, u, kinematicBC=None):
+        with ng.TaskManager():
+            if kinematicBC is not None:
+                u.components[0].Set(kinematicBC[0], BND)
+                u.components[1].Set(kinematicBC[1], BND)
+            else:
+                u.vec[:] = 0.0
+
+    def solve2(self, tfin, nsteps, u0, c0,
+               t=None, F=None, kinematicBC=None, tractionBC=None):
+        """
+        This function numerically solves the system
+            c' = Ce Av (Ce ε(u) - c),
+            div(Ce ε(u)) = f + div(c),
+        starting from time 0, with initial iterates "u0", "c0", proceeding
+        until final time "tfin" is reached. Here u denotes the total
+        (elastic+viscous) displacement, c = Ce ε(uviscous), and the
+        above equations are a reformulation of the equations of
+        the Maxwell viscoelastic model. Kinematic boundary condition on u
+        should be input as a vector in "kinematicBC" and traction
+        conditions should be input in "tractionBC" as a 2x2 matrix
+        even though only its product with outward normal will be used.
+        The boundary and load data (F, kinematicBC, tractionBC)  are
+        allowed to depend on an input time parameter "t" (and if "t" is
+        not given, they are assumed to not depend on time).
+        The output is a composite grid function containing both c and u.
+
+        The time stepping method used:
+          Update c by  c = c + dt Ce Av (Ce ε(u) - c),
+          Update u by  div(Ce ε(u)) = f + div(c).
+        """
+
+        dt = tfin / nsteps
+
+        if t is None:
+            t = ng.Parameter(0.0)
+
+        # Make the form  (Ce Av (Ce ε(u) - c),  s)ᵣ
+        c, u = self.SU.TrialFunction()
+        s = self.S.TestFunction()
+        cupdate = ip(self.CeAv(self.Ce(rε(u))), s)
+        cupdate -= ip(self.CeAv(c), s) * r
+        cupdate.Compile()
+        b = ng.BilinearForm(trialspace=self.SU, testspace=self.S,
+                            nonassemble=True)
+        b += cupdate * drdz
+
+        # Make the form  (-f - div c,  v)ᵣ after integrating by parts
+        dγ = ds(skeleton=True, bonus_intorder=1,
+                definedon=self.mesh.Boundaries(self.σbdry))
+        u, v = self.U.TnT()
+        vr, vz = v
+        v = tuple(v)
+        c = self.S.TrialFunction()
+        n = ng.specialcf.normal(self.mesh.dim)
+        cn = mat2x2(c) * n
+        d = ng.BilinearForm(trialspace=self.S, testspace=self.U,
+                            nonassemble=True)
+        d += ip(c, rε(v)) * drdz
+        d += -(cn[0] * vr + cn[1] * vz) * r * dγ
+        if tractionBC is not None:
+            d += (tractionBC * n) * v * r * dγ
+        if F is not None:
+            d += -InnerProduct(F, v) * r * drdz
+
+        cu = ng.GridFunction(self.SU)
+        w = u0.vec.CreateVector()
+        s = c0.vec.CreateVector()
+
+        cu.components[0].vec.data = c0.vec
+        cu.components[1].vec.data = u0.vec
+        c = cu.components[0]
+        u = cu.components[1]
+
+        with ng.TaskManager():
+
+            for i in range(nsteps):
+
+                t.Set((i+1)*dt)
+                print('  Timestep %3d  to reach time %g' % (i+1, t.Get()))
+
+                # Replace c by c + dt Ce Av (Ce ε(u) - c)
+                b.Apply(cu.vec, s)
+                self.S.SolveM(rho=r, vec=s)
+                c.vec.data += dt * s
+
+                # Replace u by numerical solution of div(Ce ε(u)) = f + div(c)
+                d.Apply(c.vec, w)
+                self.setkinematicbc(u, kinematicBC)
+                self.staticsolve(w, u)
+
+        return cu

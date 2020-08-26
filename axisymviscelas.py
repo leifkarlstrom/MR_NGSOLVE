@@ -222,11 +222,12 @@ class AxisymViscElas:
                 u.vec[:] = 0.0
 
     def solve2(self, tfin, nsteps, u0, c0,
-               t=None, F=None, kinematicBC=None, tractionBC=None):
+               t=None, F=None, kinematicBC=None, tractionBC=None, G=None):
         """
-        This function numerically solves the system
-            c' = Ce Av (Ce ε(u) - c),
-            div(Ce ε(u)) = f + div(c),
+        This function numerically solves for c(r, z, t) and u(r, z, t)
+        satisfying
+            c' = Ce Av (Ce ε(u) - c) + G(t),
+            div(Ce ε(u)) = F(t) + div(c),
         starting from time 0, with initial iterates "u0", "c0", proceeding
         until final time "tfin" is reached. Here u denotes the total
         (elastic+viscous) displacement, c = Ce ε(uviscous), and the
@@ -234,33 +235,38 @@ class AxisymViscElas:
         the Maxwell viscoelastic model. Kinematic boundary condition on u
         should be input as a vector in "kinematicBC" and traction
         conditions should be input in "tractionBC" as a 2x2 matrix
-        even though only its product with outward normal will be used.
-        The boundary and load data (F, kinematicBC, tractionBC)  are
+        (even though only its product with outward normal will be used).
+        The boundary and load data (F, kinematicBC, tractionBC, G)  are
         allowed to depend on an input time parameter "t" (and if "t" is
         not given, they are assumed to not depend on time).
+        F should be given as a 2-vector and G should be given as
+        a 4-vector to represent the 3x3 matrix of the form of c.
+
         The output is a composite grid function containing both c and u.
 
         The time stepping method used:
-          Update c by  c = c + dt Ce Av (Ce ε(u) - c),
-          Update u by  div(Ce ε(u)) = f + div(c).
+          Update c by  c = c + dt (Ce Av (Ce ε(u) - c) + G),
+          Update u by  div(Ce ε(u)) = F + div(c).
         """
 
         dt = tfin / nsteps
-
         if t is None:
             t = ng.Parameter(0.0)
+        t.Set(0.0)
 
-        # Make the form  (Ce Av (Ce ε(u) - c),  s)ᵣ
+        # Make the form  (Ce Av (Ce ε(u) - c) + G,  s)ᵣ
         c, u = self.SU.TrialFunction()
         s = self.S.TestFunction()
         cupdate = ip(self.CeAv(self.Ce(rε(u))), s)
         cupdate -= ip(self.CeAv(c), s) * r
+        if G is not None:
+            cupdate += ip(G, s) * r
         cupdate.Compile()
         b = ng.BilinearForm(trialspace=self.SU, testspace=self.S,
                             nonassemble=True)
         b += cupdate * drdz
 
-        # Make the form  (-f - div c,  v)ᵣ after integrating by parts
+        # Make the form  (-F - div c,  v)ᵣ after integrating by parts
         dγ = ds(skeleton=True, bonus_intorder=1,
                 definedon=self.mesh.Boundaries(self.σbdry))
         u, v = self.U.TnT()
@@ -271,12 +277,15 @@ class AxisymViscElas:
         cn = mat2x2(c) * n
         d = ng.BilinearForm(trialspace=self.S, testspace=self.U,
                             nonassemble=True)
-        d += ip(c, rε(v)) * drdz
-        d += -(cn[0] * vr + cn[1] * vz) * r * dγ
-        if tractionBC is not None:
-            d += (tractionBC * n) * v * r * dγ
+        dvol = ip(c, rε(v))
         if F is not None:
-            d += -InnerProduct(F, v) * r * drdz
+            dvol += -InnerProduct(F, v) * r
+        dvol.Compile()
+        dbdr = -(cn[0] * vr + cn[1] * vz) * r
+        if tractionBC is not None:
+            dbdr += (tractionBC * n) * v * r
+        dbdr.Compile()
+        d += dvol * drdz + dbdr * dγ
 
         cu = ng.GridFunction(self.SU)
         w = u0.vec.CreateVector()
@@ -294,7 +303,7 @@ class AxisymViscElas:
                 t.Set((i+1)*dt)
                 print('  Timestep %3d  to reach time %g' % (i+1, t.Get()))
 
-                # Replace c by c + dt Ce Av (Ce ε(u) - c)
+                # Replace c by c + dt (Ce Av (Ce ε(u) - c) + G)
                 b.Apply(cu.vec, s)
                 self.S.SolveM(rho=r, vec=s)
                 c.vec.data += dt * s

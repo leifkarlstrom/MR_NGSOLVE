@@ -111,11 +111,19 @@ class AxisymViscElas:
 
     def __init__(self, mu=0.5, lam=4.0, tau=1, A=4, B=4, D=5, L=10,
                  hcavity=0.5, hglobal=1, p=2,  tractionBCparts='',
-                 kinematicBCparts='axis|cavity|top|rgt|bot'):
+                 kinematicBCparts='axis|cavity|top|rgt|bot',
+                 refine=0, curvedegree=2):
 
         self.geometry = region_outside_cavity(A, B, D, L, hcavity)
-        self.mesh = ng.Mesh(self.geometry.GenerateMesh(maxh=hglobal))
-        self.mesh.Curve(2)
+        ngmesh = self.geometry.GenerateMesh(maxh=hglobal)
+        for i in range(refine+1):
+            print('  Refining mesh')
+            ngmesh.Refine()
+        self.mesh = ng.Mesh(ngmesh)
+        self.mesh.ngmesh.SetGeometry(self.geometry)
+        if curvedegree > 0:
+            self.mesh.Curve(curvedegree)
+        ng.Draw(self.mesh)
         self.p = p
 
         self.mu = mu

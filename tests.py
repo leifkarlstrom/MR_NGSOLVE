@@ -4,7 +4,7 @@ from ngsolve import CoefficientFunction as CF
 ng.ngsglobals.msg_level = 1
 
 
-ave = AxisymViscElas(p=2, refine=2, hcavity=2, hglobal=2, curvedegree=0)
+ave = AxisymViscElas(p=2, refine=0, hcavity=2, hglobal=2, curvedegree=0)
 
 
 threshold = 1.e-15  # Use thresholding to avoid division by zero in 1/r
@@ -152,7 +152,31 @@ def test_manufactured_soln():
     uexact = CF( (2 - ng.exp(-t)) * α * (r, z))
     cexact = (1 - ng.exp(-t))*ave.Ce(ε(uₑ))
 
-    G = ng.exp(-t) * ave.Ce(ε(uₑ)) - ave.CeAv(ave.Ce(ε(uexact))) + ave.CeAv(cexact)
+    def tmp_source(u):
+        """
+        Computes the temporal source term G = e⁻ᵗCₑε(u) - CₑAᵥCₑε(u)
+        """
+        ur, uz = u
+
+        drur = ur.Diff(r)
+        dzur = ur.Diff(z)
+        druz = uz.Diff(r)
+        dzuz = uz.Diff(z)
+
+        # trace of the strain ( tr(ε(u)) )
+        tr = drur + dzuz + ur * rinv
+
+        K1 = 2 * ave.mu * (ng.exp(-t) - (1 / ave.tau))
+        K2 = (ave.lam * ng.exp(-t) + 1/3) * tr
+
+        return CF( (K1* drur + K2,
+                    K1 * (druz+dzur)/2 ,
+                    K1* dzuz + K2,
+                    K1* rinv * ur + K2 ))
+
+    #G = ng.exp(-t) * ave.Ce(ε(uₑ)) - ave.CeAv(ave.Ce(ε(uexact))) + ave.CeAv(cexact)
+    G = tmp_source(uₑ)
+
 
 
     # Time-varying boundary condition using the parameter t
@@ -171,7 +195,7 @@ def test_manufactured_soln():
 
     # Time step and solve up to time T
     T = 0.001
-    cu = ave.solve2(tfin=T, nsteps=1, u0=u0, c0=c0, t=t, kinematicBC=uBC, G=G)
+    cu = ave.solve2(tfin=T, nsteps=10, u0=u0, c0=c0, t=t, kinematicBC=uBC, G=G)
     c = cu.components[0]  # extract c and u components from output
     u = cu.components[1]
 

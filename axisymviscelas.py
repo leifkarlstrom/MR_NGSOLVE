@@ -115,7 +115,9 @@ class AxisymViscElas:
 
         self.geometry = region_outside_cavity(A, B, D, L, hcavity)
         self.mesh = ng.Mesh(self.geometry.GenerateMesh(maxh=hglobal))
-        self.mesh.Curve(2)
+        #self.mesh.Curve(2)
+        self.mesh.Refine()
+        #self.mesh.Refine()
         self.p = p
 
         self.mu = mu

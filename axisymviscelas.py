@@ -77,8 +77,10 @@ def ε(u):
     """ 3D linearized strain:  ε(ur, uz) = [εrz(ur, uz)   0]
                                            [0          ur/r].  """
     ur, uz = u
-    drur, dzur = grad(ur)
-    druz, dzuz = grad(uz)
+    drur = ur.Diff(r)  # Diff works for CF (grad works for test/trial fn)
+    dzur = ur.Diff(z)
+    druz = uz.Diff(r)
+    dzuz = uz.Diff(z)
     return CF((drur, (druz+dzur)/2, dzuz, ur * rinv))
 
 

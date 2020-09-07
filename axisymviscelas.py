@@ -210,9 +210,17 @@ class AxisymViscElas:
         u = ng.GridFunction(self.U)
         self.setkinematicbc(u, kinematicBC)
         f = ng.LinearForm(self.U)
+        vr, vz = self.U.TestFunction()
+        v = CF((vr, vz))
+        n = ng.specialcf.normal(self.mesh.dim)
+
         if F is not None:
-            v = self.U.TestFunction()
             f += InnerProduct(F, v) * r * drdz
+        if tractionBC is not None:
+            dγ = ds(skeleton=True, bonus_intorder=1,
+                    definedon=self.mesh.Boundaries(self.σbdry))
+            f += (tractionBC * n) * v * r * dγ
+
         with ng.TaskManager():
             f.Assemble()
         return self.staticsolve(f.vec, u)

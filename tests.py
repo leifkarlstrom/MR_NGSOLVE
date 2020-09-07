@@ -4,23 +4,28 @@ from ngsolve import CoefficientFunction as CF
 ng.ngsglobals.msg_level = 1
 
 
-ave = AxisymViscElas(p=3)
-
-
 def test_primal():
     """
     Check that displacement r eᵣ is recovered by primalsolve() method.
     """
 
-    uexact = CF((r, 0))
+    ave = AxisymViscElas(p=2,  tractionBCparts='cavity',
+                         kinematicBCparts='axis|top|rgt|bot')
 
-    u = ave.primalsolve(kinematicBC=uexact)
+    uexact = CF((r, 0))
+    traction = CF((2*(ave.mu + ave.lam), 0,
+                   0,                    2*ave.lam), dims=(2, 2))
+
+    u = ave.primalsolve(kinematicBC=uexact, tractionBC=traction)
     ng.Draw(u.components[0])
     Δu = CF((uexact[0] - u.components[0], uexact[1] - u.components[1]))
     normΔu = ng.sqrt(ng.Integrate(Δu*Δu, ave.mesh))
     print('Error in u:', normΔu)
     success = normΔu < 1.e-12
     assert success, 'Exact solution r unrecovered by the primal method!'
+
+
+ave = AxisymViscElas(p=2)
 
 
 def test_cupdate():
@@ -52,7 +57,7 @@ def test_cupdate():
     err = cexact - CF(tuple(cu.components[0].components))
     e = ng.Integrate(ng.InnerProduct(err, err), ave.mesh)
     print('Error =', e)
-    success = e < 1.e-8  # can't expect better error due to curving
+    success = e < 1.e-6  # can't expect better error due to curving
     assert success, ''
 
 
@@ -115,7 +120,7 @@ def test_solve2():
     eu = ng.sqrt(ng.Integrate(ng.InnerProduct(erru, erru), ave.mesh))
     print('Error in c = ', ec)
     print('Error in u = ', eu)
-    success = eu < 1e-12 and ec < 1e-2
+    success = eu < 1e-10 and ec < 1e-2
     assert success, 'Timestepping by solve2(..) did not yield expected error'
 
 

@@ -314,6 +314,9 @@ class AxisymViscElas:
 
         # Make traction BC source term for u update
         if tractionBC is not None:
+            if len(self.σbdry) == 0:
+                raise ValueError('Constructor should know where ' +
+                                 'to put traction.')
             dγ = ds(skeleton=True, bonus_intorder=1,
                     definedon=self.mesh.Boundaries(self.σbdry))
             σnv = ng.LinearForm(self.U)

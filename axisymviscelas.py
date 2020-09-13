@@ -75,8 +75,13 @@ def εrz(u):
 
 def ε(u):
     """ 3D linearized strain:  ε(ur, uz) = [εrz(ur, uz)   0]
-                                           [0          ur/r].  """
+                                           [0          ur/r].
+    This only works when "u" is a CF expressed in terms of r and z. """
+
     ur, uz = u
+    if not isinstance(u, CF):
+        raise ValueError('Function ε(u) only works when u ' +
+                         'is a CoefficientFunction! type(u)=%s' % type(u))
     drur = ur.Diff(r)  # Diff works for CF (grad works for test/trial fn)
     dzur = ur.Diff(z)
     druz = uz.Diff(r)
@@ -250,10 +255,21 @@ class AxisymViscElas:
         until final time "tfin" is reached. Here u denotes the total
         (elastic+viscous) displacement, c = Ce ε(uviscous), and the
         above equations are a reformulation of the equations of
-        the Maxwell viscoelastic model. Kinematic boundary condition on u
-        should be input as a vector in "kinematicBC" and traction
-        conditions should be input in "tractionBC" as a 2x2 matrix
-        (even though only its product with outward normal will be used).
+        the Maxwell viscoelastic model.  Boundary conditions imposed are
+
+          u = kinematicBC         on kinematicBCparts,
+          σn = tractionBC * n     on tractionBCparts,
+
+        where kinematicBCparts and tractionBCparts are previously
+        set by class constructor. Input "kinematicBC" should be a 2-vector
+        CoefficientFunction  and  input "tractionBC" should be a 2x2 matrix
+        CoefficientFunction  (even though only its product with outward unit
+        normal n will be used). Note that the true viscoelastic stress σ is
+        related to total displacement u by   Ce ε(u) = σ + c. The input
+        boundary data tractionBC * n is expected to equal the
+        viscoelastic force  σn = (Ce ε(u) - c) n. (Wrong results will be
+        obtained if Ce ε(u) n is given in tractionBC instead.)
+
         The boundary and load data (F, kinematicBC, tractionBC, G)  are
         allowed to depend on an input time parameter "t" (and if "t" is
         not given, they are assumed to not depend on time).
@@ -262,9 +278,6 @@ class AxisymViscElas:
 
         The output is a composite grid function containing both c and u.
 
-        The time stepping method used:
-          Update c by  c = c + dt (Ce Av (Ce ε(u) - c) + G),
-          Update u by  div(Ce ε(u)) = F + div(c).
         """
 
         dt = tfin / nsteps
@@ -285,25 +298,28 @@ class AxisymViscElas:
         b += cupdate * drdz
 
         # Make the form  (-F - div c,  v)ᵣ after integrating by parts
-        dγ = ds(skeleton=True, bonus_intorder=1,
-                definedon=self.mesh.Boundaries(self.σbdry))
         u, v = self.U.TnT()
         vr, vz = v
         v = tuple(v)
         c = self.S.TrialFunction()
         n = ng.specialcf.normal(self.mesh.dim)
-        cn = mat2x2(c) * n
+
         d = ng.BilinearForm(trialspace=self.S, testspace=self.U,
                             nonassemble=True)
         dvol = ip(c, rε(v))
         if F is not None:
             dvol += -InnerProduct(F, v) * r
         dvol.Compile()
-        dbdr = -(cn[0] * vr + cn[1] * vz) * r
+        d += dvol * drdz
+
+        # Make traction BC source term for u update
         if tractionBC is not None:
-            dbdr += (tractionBC * n) * v * r
-        dbdr.Compile()
-        d += dvol * drdz + dbdr * dγ
+            dγ = ds(skeleton=True, bonus_intorder=1,
+                    definedon=self.mesh.Boundaries(self.σbdry))
+            σnv = ng.LinearForm(self.U)
+            sbdr = (tractionBC * n) * v * r
+            sbdr.Compile()
+            σnv += sbdr * dγ
 
         cu = ng.GridFunction(self.SU)
         w = u0.vec.CreateVector()
@@ -328,6 +344,9 @@ class AxisymViscElas:
 
                 # Replace u by numerical solution of div(Ce ε(u)) = f + div(c)
                 d.Apply(c.vec, w)
+                if tractionBC is not None:
+                    σnv.Assemble()
+                    w += σnv.vec
                 self.setkinematicbc(u, kinematicBC)
                 self.staticsolve(w, u)
 

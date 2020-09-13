@@ -4,13 +4,14 @@ from ngsolve import CoefficientFunction as CF
 ng.ngsglobals.msg_level = 1
 
 
+ave = AxisymViscElas(p=2,  tractionBCparts='cavity',
+                     kinematicBCparts='axis|top|rgt|bot')
+
+
 def test_primal():
     """
     Check that displacement r eᵣ is recovered by primalsolve() method.
     """
-
-    ave = AxisymViscElas(p=2,  tractionBCparts='cavity',
-                         kinematicBCparts='axis|top|rgt|bot')
 
     uexact = CF((r, 0))
     traction = CF((2*(ave.mu + ave.lam), 0,
@@ -23,9 +24,6 @@ def test_primal():
     print('Error in u:', normΔu)
     success = normΔu < 1.e-12
     assert success, 'Exact solution r unrecovered by the primal method!'
-
-
-ave = AxisymViscElas(p=2)
 
 
 def test_cupdate():
@@ -78,10 +76,15 @@ def test_solve2():
 
     with f = 0 and a time-varying kinematic boundary condition.
 
-    Since div(c) = 0, the numerical u-solution in this case only depends
-    on the boundary condition. Hence we expect machine 0 error for u.
+    Since div(c) = 0 for this example, the numerical u-solution only depends
+    on the boundary condition.    When kinematic bc is given, we may
+    therefore expect machine 0 error for u.
     The numerical approximation of c on the other hand will have larger
     errors due to the time stepping not recovering the exponential exactly.
+
+    When traction bc is given, the traction source term interacts with values
+    of c on the boudary so u-error will depend on c-error, and hence neither
+    error can be expected to machine 0.
     """
 
     # Time as a parameter whose value can be set later
@@ -91,6 +94,9 @@ def test_solve2():
     ct = ng.exp((2 * ave.mu / 3 - 1) * t / ave.tau)
     cexact = CF((ct, 0, -2*ct, ct))
     uexact = CF((ct * r, 0))
+    traction = ct * CF((2*(ave.mu+ave.lam) - 1,             0,
+                        0,                      2*ave.lam + 2),
+                       dims=(2, 2))
 
     # Time-varying boundary condition using the parameter t
     uBC = uexact
@@ -108,7 +114,8 @@ def test_solve2():
 
     # Time step and solve up to time T
     T = 0.1
-    cu = ave.solve2(tfin=T, nsteps=10, u0=u0, c0=c0, t=t, kinematicBC=uBC)
+    cu = ave.solve2(tfin=T, nsteps=10, u0=u0, c0=c0, t=t,
+                    kinematicBC=uBC, tractionBC=traction)
     c = cu.components[0]  # extract c and u components from output
     u = cu.components[1]
 
@@ -120,7 +127,7 @@ def test_solve2():
     eu = ng.sqrt(ng.Integrate(ng.InnerProduct(erru, erru), ave.mesh))
     print('Error in c = ', ec)
     print('Error in u = ', eu)
-    success = eu < 1e-10 and ec < 1e-2
+    success = eu < 1e-2 and ec < 1e-2
     assert success, 'Timestepping by solve2(..) did not yield expected error'
 
 

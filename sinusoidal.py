@@ -13,13 +13,11 @@ for amplitude α and angular frequency ω.
 # cavity and  material parameters
 A = 4       # cavity semi-major axis
 B = 4       # cavity semi-minor axis
-D = 5       # cavity depth beneath Earth's surface
-L = 10      # domain length along r-axis
-
+D = 10      # cavity depth beneath Earth's surface
+L = 15      # domain length along r-axis
 μ = 0.5     # μ and λ are lamé parameters
 λ = 4.0
-τ = 1.0     # relaxation time
-
+τ = 1       # relaxation time
 p = 3       # order of FESpace
 
 
@@ -32,9 +30,9 @@ ave = AxisymViscElas(mu=μ, lam=λ, tau=τ, A=A, B=B, D=D, L=L, p=p,
 t = ng.Parameter(0.0)
 
 # sinusoidal pressure to be imposed on cavity boundary
-α = 1.0         # amplitude
-ω = 1.0         # angular frequency
-P = α * ng.sin(ω * t)
+α = 0.5        # amplitude
+ω = 10          # angular frequency
+P = α * (1 + ng.sin(ω * t))
 
 # starting from the cavity boundary conditions written in spherical (ρ, φ, θ)
 # we know that the cavity b.c must satisfy
@@ -51,7 +49,7 @@ cosφ = z / ρ
 
 # Pressure on the cavity
 n = ng.specialcf.normal(ave.mesh.dim)
-sn = (-P * sinφ, -P * cosφ)
+sn = (P * sinφ, P * cosφ)
 σBC = CF((sn[0]*n[0], sn[0]*n[1],
           sn[1]*n[0], sn[1]*n[1]), dims=(2, 2))
 
@@ -71,19 +69,7 @@ crz.Set(0)
 czz.Set(0)
 cθθ.Set(0)
 
-# itty-bitty time interval so temporal error does not creep in when
-# observing the spatial error
-T = 1e-7
 
-cu = ave.solve2(tfin=T, nsteps=1, u0=u0, c0=c0, t=t, tractionBC=σBC,
-                kinematicBC=uBC)
-
-c = cu.components[0]
-u = cu.components[1]
-ur = u.components[0]
-uz = u.components[1]
-
-# plot the approximate displacements
-t.Set(T)
-ng.Draw(ur)
-ng.Draw(uz)
+# simulate
+cu = ave.solve2(tfin=1, nsteps=100, u0=u0, c0=c0, t=t, tractionBC=σBC,
+                draw=True)

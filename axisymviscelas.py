@@ -2,6 +2,8 @@ from cavitygeometry import region_outside_cavity
 import ngsolve as ng
 from ngsolve import dx, ds, grad, BND, InnerProduct
 from ngsolve import CoefficientFunction as CF
+from ngsolve.internal import visoptions
+from ngsolve import SetVisualization
 
 
 # Things often used in this scope ######################################
@@ -151,7 +153,7 @@ class AxisymViscElas:
         Vz = ng.H1(self.mesh, order=p, dirichlet=self.ubdry_noaxis)
         self.U = ng.FESpace([Vr, Vz])
 
-        # Space of viscous stresses c = (c_rr, c_rz, c_zz, c_θθ)
+        # Space for c = (c_rr, c_rz, c_zz, c_θθ)
         L = ng.L2(self.mesh, order=p)
         #                    c_rr  c_rz  c_zz  c_θθ
         self.S = ng.FESpace([L,     L,    L,    L])
@@ -245,7 +247,8 @@ class AxisymViscElas:
                 u.vec[:] = 0.0
 
     def solve2(self, tfin, nsteps, u0, c0,
-               t=None, F=None, kinematicBC=None, tractionBC=None, G=None):
+               t=None, F=None, kinematicBC=None, tractionBC=None, G=None,
+               draw=True):
         """
         This function numerically solves for c(r, z, t) and u(r, z, t)
         satisfying
@@ -333,6 +336,20 @@ class AxisymViscElas:
         c = cu.components[0]
         u = cu.components[1]
 
+        if draw:
+            V = ng.VectorL2(self.mesh, order=self.p)
+            uh = ng.GridFunction(V, name='displacement')
+            tr = ng.GridFunction(ng.L2(self.mesh, order=self.p),
+                                 name='trace(stress)')
+            urz = CF((u.components[0], u.components[1]))
+            uh.Set(urz)
+            σ = self.Ce(ε(urz))
+            tr.Set(σ[0] + σ[2] + σ[3])
+            ng.Draw(uh)
+            ng.Draw(tr)
+            visoptions.vecfunction = 'displacement'
+            SetVisualization(deformation=True)
+
         with ng.TaskManager():
 
             for i in range(nsteps):
@@ -353,4 +370,10 @@ class AxisymViscElas:
                 self.setkinematicbc(u, kinematicBC)
                 self.staticsolve(w, u)
 
+                if draw:
+                    urz = CF((u.components[0], u.components[1]))
+                    uh.Set(urz)
+                    σ = self.Ce(ε(urz))
+                    tr.Set(σ[0] + σ[2] + σ[3])
+                    ng.Redraw()
         return cu

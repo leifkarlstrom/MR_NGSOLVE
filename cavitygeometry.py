@@ -71,7 +71,7 @@ def region_outside_rectangular_cavity(A, B, D, L, hcavity):
     return geo
 
 
-def region_outside_cavity(A, B, D, L, hcavity, htop=None):
+def region_outside_cavity(A, B, D, Lr, hcavity, Lz=None, htop=None):
     """
     This routine creates a spline geometry (which can later be meshed) for
     the region outside the magma cavity, with these parameters:
@@ -79,12 +79,12 @@ def region_outside_cavity(A, B, D, L, hcavity, htop=None):
     - Cavity is ellipsoidal of r-semimajor axis length A, z-semiminor axis B.
     - Terrain is at distance D from the center of the ellipse.
     - The ellipse is centered at the origin of the coordinate system.
-    - The enclosing box has vertices (0, B+D), (L, B+D), (0, -L), (L, -L).
+    - The enclosing box has vertices (0, B+D), (Lr, B+D), (0, -Lz), (Lr, -Lz).
     - Maximal element length near ellipse (when meshing) is not more
       than hcavity.
 
     (0, B+D)
-    +--------------------------------------------+  (L, B+D)
+    +--------------------------------------------+  (Lr, B+D)
     |                                            |
     |                                            |
     |                                            |
@@ -106,14 +106,17 @@ def region_outside_cavity(A, B, D, L, hcavity, htop=None):
     |                                            |
     |                                            |
     |                                            |
-    +--------------------------------------------+ (L, -L)
-    (0, -L)
+    +--------------------------------------------+ (Lr, -Lz)
+    (0, -Lz)
 
 
     """
 
+    if Lz is None:
+        Lz = Lr
+
     if htop is None:
-        htop = L
+        htop = Lr
     geo = SplineGeometry()
     ellipsetop, ellipsectlu, ellipsergt = [geo.AppendPoint(x, y)
                                            for (x, y) in [(0, B),
@@ -123,9 +126,9 @@ def region_outside_cavity(A, B, D, L, hcavity, htop=None):
                                for (x, y) in [(0, -B), (A, -B)]]
     boxtoplft, boxtoprgt, boxbotlft, boxbotrgt = [geo.AppendPoint(x, y)
                                                   for (x, y) in [(0, B+D),
-                                                                 (L, B+D),
-                                                                 (0, -L),
-                                                                 (L, -L)]]
+                                                                 (Lr, B+D),
+                                                                 (0, -Lz),
+                                                                 (Lr, -Lz)]]
     # go counter clockwise to get outward unit normal right
     geo.Append(['line', ellipsebot, boxbotlft],
                bc='axis', leftdomain=1, rightdomain=0)

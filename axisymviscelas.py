@@ -248,7 +248,7 @@ class AxisymViscElas:
 
     def solve2(self, tfin, nsteps, u0, c0,
                t=None, F=None, kinematicBC=None, tractionBC=None, G=None,
-               draw=True):
+               draw=False):
         """
         This function numerically solves for c(r, z, t) and u(r, z, t)
         satisfying
@@ -270,7 +270,7 @@ class AxisymViscElas:
         normal n will be used). Note that the true viscoelastic stress σ is
         related to total displacement u by   Ce ε(u) = σ + c. The input
         boundary data tractionBC * n is expected to equal the
-        viscoelastic force  σn = (Ce ε(u) - c) n. (Wrong results will be
+        viscoelastic force  σn = (Ce ε(u) - c) n. (Wrong results may be
         obtained if Ce ε(u) n is given in tractionBC instead.)
 
         The boundary and load data (F, kinematicBC, tractionBC, G)  are
@@ -320,10 +320,21 @@ class AxisymViscElas:
             if len(self.σbdry) == 0:
                 raise ValueError('Constructor should know where ' +
                                  'to put traction.')
-            dγ = ds(skeleton=True, bonus_intorder=1,
+            if isinstance(tractionBC, CF):
+                frc = tractionBC * n
+            else:
+                if isinstance(tractionBC, dict):
+                    f0 = CF((0, 0,
+                             0, 0), dims=(2, 2))
+                    frc = self.mesh.BoundaryCF(tractionBC, default=f0) * n
+                else:
+                    raise ValueError('Give tractionBC as a CF or a dict')
+            frc.Compile()
+
+            dγ = ds(bonus_intorder=1,
                     definedon=self.mesh.Boundaries(self.σbdry))
             σnv = ng.LinearForm(self.U)
-            sbdr = (tractionBC * n) * v * r
+            sbdr = frc * v * r
             sbdr.Compile()
             σnv += sbdr * dγ
 
@@ -355,7 +366,8 @@ class AxisymViscElas:
             for i in range(nsteps):
 
                 t.Set((i+1)*dt)
-                print('  Timestep %3d  to reach time %g' % (i+1, t.Get()))
+                print('  Timestep %3d  to reach time %g' % (i+1, t.Get()),
+                      end='\r')
 
                 # Replace c by c + dt (Ce Av (Ce ε(u) - c) + G)
                 b.Apply(cu.vec, s)

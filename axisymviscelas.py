@@ -248,7 +248,7 @@ class AxisymViscElas:
 
     def solve2(self, tfin, nsteps, u0, c0,
                t=None, F=None, kinematicBC=None, tractionBC=None, G=None,
-               draw=False):
+               draw=False, skip=1):
         """
         This function numerically solves for c(r, z, t) and u(r, z, t)
         satisfying
@@ -279,7 +279,12 @@ class AxisymViscElas:
         F should be given as a 2-vector and G should be given as
         a 4-vector to represent the 3x3 matrix of the form of c.
 
-        The output is a composite grid function containing both c and u.
+        OUTPUTS: cu, uht, cht, σht
+         - cu  is a composite grid function containing both c and u
+        at the last time step,
+         - uht, cht, σht contains the time history of displacement, c,
+        and stress, throughout the simulation, but skipping every "skip"
+        timesteps.
 
         """
 
@@ -347,15 +352,29 @@ class AxisymViscElas:
         c = cu.components[0]
         u = cu.components[1]
 
+        # Output fields
+        V = ng.VectorH1(self.mesh, order=self.p)
+        L = ng.L2(self.mesh, order=self.p, dim=4)
+        uht = ng.GridFunction(V, name='displacement', multidim=0)
+        σht = ng.GridFunction(L, name='stress', multidim=0)
+        cht = ng.GridFunction(L, name='c', multidim=0)
+        uh = ng.GridFunction(V, name='displacement')
+        σh = ng.GridFunction(L, name='stress')
+        ch = ng.GridFunction(L, name='c')
+
+        urz = CF((u.components[0], u.components[1]))
+        uh.Set(urz)
+        σh.Set(self.Ce(ε(urz)))
+        crr, crz, czz, cθθ = c.components
+        ch.Set(CF((crr, crz, czz, cθθ)))
+        uht.AddMultiDimComponent(uh.vec)
+        cht.AddMultiDimComponent(ch.vec)
+        σht.AddMultiDimComponent(σh.vec)
+
         if draw:
-            V = ng.VectorL2(self.mesh, order=self.p)
-            uh = ng.GridFunction(V, name='displacement')
             tr = ng.GridFunction(ng.L2(self.mesh, order=self.p),
                                  name='trace(stress)')
-            urz = CF((u.components[0], u.components[1]))
-            uh.Set(urz)
-            σ = self.Ce(ε(urz))
-            tr.Set(σ[0] + σ[2] + σ[3])
+            tr.Set(σh[0] + σh[2] + σh[3])
             ng.Draw(uh)
             ng.Draw(tr)
             visoptions.vecfunction = 'displacement'
@@ -382,10 +401,21 @@ class AxisymViscElas:
                 self.setkinematicbc(u, kinematicBC)
                 self.staticsolve(w, u)
 
-                if draw:
+                # Store for output and visualize
+                if (i+1) % skip == 0:
                     urz = CF((u.components[0], u.components[1]))
                     uh.Set(urz)
-                    σ = self.Ce(ε(urz))
-                    tr.Set(σ[0] + σ[2] + σ[3])
-                    ng.Redraw()
-        return cu
+                    σh.Set(self.Ce(ε(urz)))
+                    crr, crz, czz, cθθ = c.components
+                    ch.Set(CF((crr, crz, czz, cθθ)))
+
+                    uht.AddMultiDimComponent(uh.vec)
+                    cht.AddMultiDimComponent(ch.vec)
+                    σht.AddMultiDimComponent(σh.vec)
+
+                    if draw:
+                        tr.Set(σh[0] + σh[2] + σh[3])
+                        ng.Redraw()
+
+        print('\nSimulation done.')
+        return cu, uht, cht, σht

@@ -4,6 +4,7 @@ from ngsolve import dx, ds, grad, BND, InnerProduct
 from ngsolve import CoefficientFunction as CF
 from ngsolve.internal import visoptions
 from ngsolve import SetVisualization
+import time
 
 
 # Things often used in this scope ######################################
@@ -419,3 +420,44 @@ class AxisymViscElas:
 
         print('\nSimulation done.')
         return cu, uht, cht, σht
+
+    def reanim(self, ut, st, sfun,
+               sleep=0.1, maxim=None, minim=None,
+               probe=None):
+        """
+        Animate a previously computed time series of solutions.
+        Displacements for all time are input in "ut", and
+        and stresses in "st".
+
+        To display a scalar function of stress, define your funciton
+        elsewhere and pass it as input argument "sfun".
+
+        To use time-independent color scalings (relevent to your sfun
+        values), give "maxim, minim".
+        """
+
+        u = ng.GridFunction(ut.space, name='u')
+        s = ng.GridFunction(st.space, name='s')
+        u.vec.data = ut.vecs[0]
+        s.vec.data = st.vecs[0]
+        sf = sfun(mat3x3(s))
+
+        ng.Draw(u)
+        ng.Draw(sf, self.mesh, 'sfun')
+        visoptions.vecfunction = 'u'
+        SetVisualization(deformation=True, max=maxim, min=minim)
+
+        vals = []
+        if probe is not None:
+            mips = [self.mesh(x, y) for x, y in probe]
+            vals.append([sf(mip) for mip in mips])
+
+        for i in range(len(ut.vecs)):
+            u.vec.data = ut.vecs[i]
+            s.vec.data = st.vecs[i]
+            if probe is not None:
+                vals.append([sf(mip) for mip in mips])
+            time.sleep(sleep)  # slow down if your cpu is too fast
+            ng.Redraw()
+
+        return vals

@@ -119,12 +119,12 @@ class AxisymViscElas:
     a region outside a magma cavity.
     """
 
-    def __init__(self, mu=0.5, lam=4.0, tau=1, A=4, B=4, D=5, L=10,
+    def __init__(self, mu=0.5, lam=4.0, tau=1, A=4, B=4, D=5, Lr=10, Lz=None,
                  hcavity=0.5, hglobal=1, p=2,  tractionBCparts='',
                  kinematicBCparts='axis|cavity|top|rgt|bot',
                  refine=0, curvedegree=2):
 
-        self.geometry = region_outside_cavity(A, B, D, L, hcavity)
+        self.geometry = region_outside_cavity(A, B, D, Lr, hcavity, Lz)
         ngmesh = self.geometry.GenerateMesh(maxh=hglobal)
         for i in range(refine):
             print('  Refining mesh')

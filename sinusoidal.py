@@ -21,7 +21,7 @@ L = 15      # domain length along r-axis
 p = 3       # order of FESpace
 
 
-ave = AxisymViscElas(mu=μ, lam=λ, tau=τ, A=A, B=B, D=D, L=L, p=p,
+ave = AxisymViscElas(mu=μ, lam=λ, tau=τ, A=A, B=B, D=D, Lr=L, p=p,
                      hcavity=0.5,  hglobal=4,
                      tractionBCparts='cavity',
                      kinematicBCparts='axis|top|rgt|bot')

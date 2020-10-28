@@ -55,8 +55,8 @@ c0.vec[:] = 0
 u0.vec[:] = 0
 
 # simulate
-cu, uht, cht, sht = ave.solve2(tfin=1, nsteps=200, u0=u0, c0=c0, t=t,
-                               tractionBC=traction, draw=True)
+cu, uht, cht, sht, ts = ave.solve2(tfin=1, nsteps=200, u0=u0, c0=c0, t=t,
+                                   tractionBC=traction, draw=True)
 
 input('Press any key to reanimate traces of stresses')
 

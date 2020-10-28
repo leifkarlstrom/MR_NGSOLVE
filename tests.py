@@ -48,7 +48,7 @@ def test_cupdate():
     czz.Set(1)
     cθθ.Set(1)
 
-    cu, _, _, _ = ave.solve2(1, 1, u0, c0)
+    cu, _, _, _, _ = ave.solve2(1, 1, u0, c0)
 
     cexact = CF((1, 0, 1, 1)) + ave.CeAv((9*z, (r-1)/2, 8*z, 9*z))
 
@@ -114,8 +114,8 @@ def test_solve2():
 
     # Time step and solve up to time T
     T = 0.1
-    cu, _, _, _ = ave.solve2(tfin=T, nsteps=10, u0=u0, c0=c0, t=t,
-                             kinematicBC=uBC, tractionBC=traction)
+    cu, _, _, _, _ = ave.solve2(tfin=T, nsteps=10, u0=u0, c0=c0, t=t,
+                                kinematicBC=uBC, tractionBC=traction)
     c = cu.components[0]  # extract c and u components from output
     u = cu.components[1]
 

@@ -185,6 +185,7 @@ class AxisymViscElas:
         """ Viscous compliance tensor Av applied to s:
         Av(s) = (dev s) / (2μτ)
         """
+        raise Warning('Use this only for dimensional tau (not if tau=De)!')
         return dev(s) / (2 * self.mu * self.tau)
 
     def Ce(self, s):
@@ -281,18 +282,21 @@ class AxisymViscElas:
         a 4-vector to represent the 3x3 matrix of the form of c.
 
         OUTPUTS: cu, uht, cht, σht
-         - cu  is a composite grid function containing both c and u
+         - "cu"  is a composite grid function containing both c and u
         at the last time step,
-         - uht, cht, σht contains the time history of displacement, c,
+         - "uht, cht, σht" contains the time history of displacement, c,
         and stress, throughout the simulation, but skipping every "skip"
         timesteps.
-
+        - "ts" contains a list of time values corresponding to each grid
+        function in the uht, cht, σht time series. (Length of "ts" may be
+        shorter than number of timesteps depending on "skip".)
         """
 
         dt = tfin / nsteps
         if t is None:
             t = ng.Parameter(0.0)
         t.Set(0.0)
+        ts = [0]
 
         # Make the form  (Ce Av (Ce ε(u) - c) + G,  s)ᵣ
         c, u = self.SU.TrialFunction()
@@ -404,6 +408,7 @@ class AxisymViscElas:
 
                 # Store for output and visualize
                 if (i+1) % skip == 0:
+                    ts.append(t.Get())
                     urz = CF((u.components[0], u.components[1]))
                     uh.Set(urz)
                     σh.Set(self.Ce(ε(urz)))
@@ -419,7 +424,7 @@ class AxisymViscElas:
                         ng.Redraw()
 
         print('\nSimulation done.')
-        return cu, uht, cht, σht
+        return cu, uht, cht, σht, ts
 
     def reanim(self, ut, st, sfun,
                sleep=0.1, maxim=None, minim=None,
@@ -429,11 +434,17 @@ class AxisymViscElas:
         Displacements for all time are input in "ut", and
         and stresses in "st".
 
-        To display a scalar function of stress, define your funciton
+        To display a scalar function of stress, define your function
         elsewhere and pass it as input argument "sfun".
 
         To use time-independent color scalings (relevent to your sfun
         values), give "maxim, minim".
+
+        To get a list of values of your "sfun" at some points in the domain,
+        give the r, z coordinates as a list in input "probe" like
+        probe = [(r0, z0), (r1, z1), ...]. Then, a list "vals"
+        will be output, whose i-th element is a list of values
+        of sfun at the probe points.
         """
 
         u = ng.GridFunction(ut.space, name='u')
@@ -450,7 +461,6 @@ class AxisymViscElas:
         vals = []
         if probe is not None:
             mips = [self.mesh(x, y) for x, y in probe]
-            vals.append([sf(mip) for mip in mips])
 
         for i in range(len(ut.vecs)):
             u.vec.data = ut.vecs[i]

@@ -124,6 +124,9 @@ class AxisymViscElas:
                  kinematicBCparts='axis|cavity|top|rgt|bot',
                  refine=0, curvedegree=2):
 
+        self.geometryparams = {'A': A, 'B': B, 'D': D, 'Lr': Lr, 'Lz': Lz,
+                               'hcavity': hcavity, 'hglobal': hglobal,
+                               'curvedegree': curvedegree}
         self.geometry = region_outside_cavity(A, B, D, Lr, hcavity, Lz)
         ngmesh = self.geometry.GenerateMesh(maxh=hglobal)
         for i in range(refine):
@@ -149,13 +152,18 @@ class AxisymViscElas:
         self.ubdry = kinematicBCparts
         self.ubdry_noaxis = self.subtract_axis(self.ubdry)
 
+        self.initFEfacilities()
+
+    def initFEfacilities(self):
+        """ some reusable initializations """
+
         # Displacement space for u = (ur, uz)
-        Vr = ng.H1(self.mesh, order=p, dirichlet=self.ubdry)
-        Vz = ng.H1(self.mesh, order=p, dirichlet=self.ubdry_noaxis)
+        Vr = ng.H1(self.mesh, order=self.p, dirichlet=self.ubdry)
+        Vz = ng.H1(self.mesh, order=self.p, dirichlet=self.ubdry_noaxis)
         self.U = ng.FESpace([Vr, Vz])
 
         # Space for c = (c_rr, c_rz, c_zz, c_θθ)
-        L = ng.L2(self.mesh, order=p)
+        L = ng.L2(self.mesh, order=self.p)
         #                    c_rr  c_rz  c_zz  c_θθ
         self.S = ng.FESpace([L,     L,    L,    L])
 
@@ -204,6 +212,8 @@ class AxisymViscElas:
         """ Return Ce(Av(s)) in simplified form: Ce(Av(s)) = (dev s) / τ.
         """
         return dev(s) / self.tau
+
+    # Computational routines ############################################
 
     def primalsolve(self, F=None, kinematicBC=None, tractionBC=None):
         """ Solve the standard axisymmetric displacement formulation
@@ -426,6 +436,8 @@ class AxisymViscElas:
         print('\nSimulation done.')
         return cu, uht, cht, σht, ts
 
+    # Convenience facilities ############################################
+
     def reanim(self, ut, st, sfun,
                sleep=0.1, maxim=None, minim=None,
                probe=None):
@@ -471,3 +483,22 @@ class AxisymViscElas:
             ng.Redraw()
 
         return vals
+
+    def __getstate__(self):
+        """Remove unpicklable attributes"""
+        state = self.__dict__.copy()
+        del state['a']
+        del state['ainv']
+        del state['S']
+        del state['U']
+        del state['SU']
+        return state
+
+    def __setstate__(self, state):
+        """Restore unpickled attributes"""
+        self.__dict__.update(state)
+        print('  Rebuilding AxisymViscElas object')
+        self.initFEfacilities()
+        self.mesh.ngmesh.SetGeometry(self.geometry)
+        if self.geometryparams['curvedegree'] > 0:
+            self.mesh.Curve(self.geometryparams['curvedegree'])

@@ -3,6 +3,7 @@ import ngsolve as ng
 import ngsolve.webgui
 from ngsolve import CoefficientFunction as CF
 import pickle
+import os
 
 ng.ngsglobals.msg_level = 1
 
@@ -55,11 +56,19 @@ c0.vec[:] = 0
 u0.vec[:] = 0
 
 # simulate
-cu, uht, cht, sht, ts = ave.solve2(tfin=1, nsteps=200, u0=u0, c0=c0, t=t,
+cu, uht, cht, sht, ts = ave.solve2(tfin=1, nsteps=100, u0=u0, c0=c0, t=t,
                                    tractionBC=traction, draw=True)
 
-input('Press any key to reanimate traces of stresses')
+# save
+fname = './outputs/output.pickle'
+print('Saving to ', fname)
+os.makedirs(os.path.dirname(fname), exist_ok=True)
+with open('outputs/output.pickle', 'wb') as f:
+    pickle.dump([uht, cht, sht, ave], f)
 
+# review before quit
+input('Press any key to reanimate traces of stresses')
 traces = ave.reanim(uht, sht,
                     lambda stress: stress[0, 0] + stress[1, 1] + stress[2, 2],
-                    maxim=4, minim=0, probe=[(4, 0), (5, 0)])
+                    maxim=4, minim=0,
+                    probe=[(4, 0), (5, 0)])

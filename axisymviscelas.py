@@ -123,6 +123,26 @@ class AxisymViscElas:
                  hcavity=0.5, hglobal=1, p=2,  tractionBCparts='',
                  kinematicBCparts='axis|cavity|top|rgt|bot',
                  refine=0, curvedegree=2):
+        """
+        INPUTS:
+           mu, lam, tau: Lame elastic parameters (mu, lam) and
+        viscoelastic relaxation time (tau = eta/mu, where eta=viscosity).
+
+           A, B, D, Lr, Lz: Magma cavity is ellipsoidal of r-semimajor
+        axis length A, z-semiminor axis B. Terrain is at distance D from
+        the center of the ellipse, which is taken as the origin. The
+        enclosing box has vertices (0, B+D), (Lr, B+D), (0, -Lz), (Lr, -Lz).
+
+           hcavity, hglobal, refine: maximal grid spacing near cavity (hcavity)
+        and over the whole mesh (hglobal), for initial mesh construction.
+        Initial mesh is refined (refine) many times before computations
+        unless refine=0.
+
+           p: finite element degree
+
+           tractionBCparts, kinematicBCparts: strings made from named
+        boundaries where boundary conditions are to be imposed.
+        """
 
         self.geometryparams = {'A': A, 'B': B, 'D': D, 'Lr': Lr, 'Lz': Lz,
                                'hcavity': hcavity, 'hglobal': hglobal,
@@ -139,10 +159,6 @@ class AxisymViscElas:
         ng.Draw(self.mesh)
         self.p = p
 
-        self.mu = mu
-        self.lam = lam
-        self.tau = tau
-
         all = self.mesh.Boundaries(tractionBCparts) + \
             self.mesh.Boundaries(kinematicBCparts)
         if sum(~all.Mask()) != 0:
@@ -152,6 +168,23 @@ class AxisymViscElas:
         self.ubdry = kinematicBCparts
         self.ubdry_noaxis = self.subtract_axis(self.ubdry)
 
+        if mu is not None and lam is not None and tau is not None:
+            self.mu = CF(mu)
+            self.lam = CF(lam)
+            self.tau = CF(tau)
+            self.matready = True
+            self.initFEfacilities()
+        else:
+            self.matready = False
+
+    def setmaterials(self, mu, lam, tau):
+        """Input material parameters as (possibly spatially varying)
+        ngsolve coefficient functions or grid functions.        """
+
+        self.matready = True
+        self.mu = CF(mu)
+        self.lam = CF(lam)
+        self.tau = CF(tau)
         self.initFEfacilities()
 
     def initFEfacilities(self):
@@ -189,13 +222,6 @@ class AxisymViscElas:
 
     # Material tensor manipulations #####################################
 
-    def Av(self, s):
-        """ Viscous compliance tensor Av applied to s:
-        Av(s) = (dev s) / (2μτ)
-        """
-        raise Warning('Use this only for dimensional tau (not if tau=De)!')
-        return dev(s) / (2 * self.mu * self.tau)
-
     def Ce(self, s):
         """ Elastic stiffness tensor Ce applied to s:
         Ce(s) = 2μ dev(s) + K(tr s) I, which using K = λ + (2μ/3) becomes
@@ -215,10 +241,34 @@ class AxisymViscElas:
 
     # Computational routines ############################################
 
+    def temperature(self, temperatureBC, kappa=1):
+        """
+        Solve for a steady temperature distribution with boundary conditions
+        on each named boundary given in temperatureBC, e.g.,
+        temperatureBC = {'cavity': 700, 'bot': 200, 'top': 20}.
+        No-flux boundary condition is imposed on boundaries not appearing
+        as a key in this dict. Diffusion coefficient should be input in kappa.
+        """
+
+        self.Tbdry = self.subtract_axis('|'.join(temperatureBC.keys()))
+        V = ng.H1(self.mesh, order=self.p, dirichlet=self.Tbdry)
+        u, v = V.TnT()
+        a = ng.BilinearForm(V, symmetric=True)
+        a += kappa * grad(u) * grad(v) * r * drdz
+        a.Assemble()
+
+        T = ng.GridFunction(V, name='temperature')
+        T.Set(self.mesh.BoundaryCF(temperatureBC), ng.BND)
+        f = T.vec.CreateVector()
+        f.data = -a.mat * T.vec
+        T.vec.data += a.mat.Inverse(V.FreeDofs()) * f
+        self.T = T
+        return T
+
     def primalsolve(self, F=None, kinematicBC=None, tractionBC=None):
         """ Solve the standard axisymmetric displacement formulation
         for the linear (not viscoelastic) elastic problem with input
-        load (vector F) and boundary data (inpu tin kinematicBC and/or
+        load (vector F) and boundary data (input in kinematicBC and/or
         tractionBC in the respective boundary parts of this object).
         """
 
@@ -262,19 +312,23 @@ class AxisymViscElas:
                t=None, F=None, kinematicBC=None, tractionBC=None, G=None,
                draw=False, skip=1):
         """
-        This function numerically solves for c(r, z, t) and u(r, z, t)
+        This function numerically solves for
+               u(r, z, t) = uviscous + uelastic, and
+               c(r, z, t) =  Ce ε(uviscous)
         satisfying
             c' = Ce Av (Ce ε(u) - c) + G(t),
             div(Ce ε(u)) = F(t) + div(c),
         starting from time 0, with initial iterates "u0", "c0", proceeding
-        until final time "tfin" is reached. Here u denotes the total
-        (elastic+viscous) displacement, c = Ce ε(uviscous), and the
-        above equations are a reformulation of the equations of
-        the Maxwell viscoelastic model.  Boundary conditions imposed are
+        until final time "tfin" is reached.  This is a reformulation of
+        the equations of the Maxwell viscoelastic model for the total
+        (elastic+viscous) displacement u.
 
+        All material parameters used here are the ones incorporated in the
+        functions CeAv(..) and Ce(..).
+
+        Boundary conditions imposed are
           u = kinematicBC         on kinematicBCparts,
           σn = tractionBC * n     on tractionBCparts,
-
         where kinematicBCparts and tractionBCparts are previously
         set by class constructor. Input "kinematicBC" should be a 2-vector
         CoefficientFunction  and  input "tractionBC" should be a 2x2 matrix
@@ -301,6 +355,9 @@ class AxisymViscElas:
         function in the uht, cht, σht time series. (Length of "ts" may be
         shorter than number of timesteps depending on "skip".)
         """
+
+        if not self.matready:
+            raise Exception('Missing material parameters.')
 
         dt = tfin / nsteps
         if t is None:
@@ -502,3 +559,12 @@ class AxisymViscElas:
         self.mesh.ngmesh.SetGeometry(self.geometry)
         if self.geometryparams['curvedegree'] > 0:
             self.mesh.Curve(self.geometryparams['curvedegree'])
+
+    def estimatebdryminmax(self, f):
+        """Give quick estimators for min & max of f on the domain boundary"""
+
+        V1 = ng.H1(self.mesh, order=1, dirichlet='axis|cavity|top|rgt|bot')
+        f1 = ng.GridFunction(V1)
+        f1.Set(f, ng.BND)
+        fv = f1.vec.FV().NumPy()[~V1.FreeDofs()]
+        return min(fv), max(fv)

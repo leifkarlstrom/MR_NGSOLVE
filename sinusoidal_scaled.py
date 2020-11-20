@@ -25,8 +25,8 @@ p = 3             # order of FESpace
 # sinusoidal pressure parameters
 P0 = 0.1          # amplitude
 ω = 10            # angular frequency
-K = 4*2*np.pi            # some scaling of the frequency for determining max run time;
-                  # t∈[0, ωK], then t̃∈[0, K]
+K = 4*2*np.pi     # some scaling of the frequency for determining max run time;
+# t∈[0, ωK], then t̃∈[0, K]
 
 # scale geometric parameters by cavity radius A
 Ã = A / A
@@ -42,7 +42,8 @@ L̃ = L / A
 # scale characteristic relaxation by pressure frequency
 De = τ * ω         # Deborah number
 
-N = int(K / (2 * De)) + 1  # number of steps required for stability of Forward Euler
+# number of steps required for stability of Forward Euler
+N = int(K / (2 * De)) + 1
 
 ave = AxisymViscElas(mu=μ̃, lam=λ̃, tau=De, A=Ã, B=B̃, D=D̃, Lr=L̃, p=p,
                      hcavity=0.5,  hglobal=4,
@@ -54,7 +55,7 @@ ave = AxisymViscElas(mu=μ̃, lam=λ̃, tau=De, A=Ã, B=B̃, D=D̃, Lr=L̃, p=p
 t = ng.Parameter(0.0)
 
 # cavity pressure
-P = ( ng.sin(t))
+P = (ng.sin(t))
 
 
 # starting from the cavity boundary conditions written in spherical (ρ, φ, θ)
@@ -76,8 +77,8 @@ sn = (P * sinφ, P * cosφ)
 cavitytraction = CF((sn[0]*n[0], sn[0]*n[1],
                      sn[1]*n[0], sn[1]*n[1]), dims=(2, 2))
 
-toptraction = CF( (0, 0,
-                   0, 0), dims=(2,2))
+toptraction = CF((0, 0,
+                  0, 0), dims=(2, 2))
 
 σBC = {'cavity': cavitytraction, 'top': toptraction}
 # boundary data for remote and depth boundaries

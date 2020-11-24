@@ -105,15 +105,16 @@ def compute_manufactured_soln(p=3, refine=0):
 
     # Time step and solve up to time T
     T = 1e-7
-    cu, uht, cht, sht, ts = ave.solve2(tfin=T, nsteps=1, u0=u0, c0=c0, t=t,
-                                       tractionBC=tractions, kinematicBC=uBC, G=G)
+    cu, uht, cht, sht, ts =  \
+        ave.solve2(tfin=T, nsteps=1, u0=u0, c0=c0, t=t,
+                   tractionBC=tractions, kinematicBC=uBC, G=G)
 
     # save
 
     fname = './outputs/ratedata_4(3).pickle'
-    print('Saving to ', fname)
+    print('Saving case p=', p, ' refine=', refine, ' to ', fname)
     os.makedirs(os.path.dirname(fname), exist_ok=True)
-    with open('outputs/ratedata/ratedata_4(3).pickle', 'wb') as f:
+    with open(fname, 'wb') as f:
         pickle.dump([cu, uht, cht, sht, ave], f)
 
     c = cu.components[0]  # extract c and u components from output
@@ -128,8 +129,7 @@ def compute_manufactured_soln(p=3, refine=0):
 
     return ec, eu
 
-compute_manufactured_soln(p=4, refine=3)
-"""
+
 def rates(func, deg, nref):
 
     errs = []
@@ -171,5 +171,6 @@ def rates(func, deg, nref):
                errs[i][1], rateu[i]))
 
 
-rates(compute_manufactured_soln, 3, 4)
-"""
+if __name__ == '__main__':
+
+    rates(compute_manufactured_soln, 3, 4)

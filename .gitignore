@@ -3,6 +3,14 @@
 # Learn more about .gitignore:
 #     https://www.atlassian.com/git/tutorials/saving-changes/gitignore
 
+
+# outputs
+outputs
+
+# log files
+log.*
+*.log
+
 # Node artifact files
 node_modules/
 dist/

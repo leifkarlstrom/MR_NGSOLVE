@@ -1,4 +1,4 @@
-from axisymviscelas import AxisymViscElas, r, z, rinv, ε
+from magmaxisym import AxisymViscElas, r, z, rinv, ε
 import ngsolve as ng
 from ngsolve import CoefficientFunction as CF
 import pickle

@@ -1,4 +1,4 @@
-from axisymviscelas import AxisymViscElas, r, z
+from magmaxisym import AxisymViscElas, r, z
 import ngsolve as ng
 from ngsolve import CoefficientFunction as CF
 ng.ngsglobals.msg_level = 1

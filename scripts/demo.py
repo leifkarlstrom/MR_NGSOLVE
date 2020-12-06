@@ -1,4 +1,4 @@
-from axisymviscelas import AxisymViscElas, r, z
+from magmaxisym import AxisymViscElas, r, z
 import ngsolve as ng
 import ngsolve.webgui
 from ngsolve import CoefficientFunction as CF
@@ -60,10 +60,10 @@ cu, uht, cht, sht, ts = ave.solve2(tfin=1, nsteps=100, u0=u0, c0=c0, t=t,
                                    tractionBC=traction, draw=True)
 
 # save
-fname = './outputs/output.pickle'
+fname = '../outputs/output.pickle'
 print('Saving to ', fname)
 os.makedirs(os.path.dirname(fname), exist_ok=True)
-with open('outputs/output.pickle', 'wb') as f:
+with open(fname, 'wb') as f:
     pickle.dump([uht, cht, sht, ave], f)
 
 # review before quit

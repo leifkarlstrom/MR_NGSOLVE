@@ -1,4 +1,4 @@
-from cavitygeometry import region_outside_cavity
+from .cavitygeometry import region_outside_cavity
 import ngsolve as ng
 from ngsolve import dx, ds, grad, BND, InnerProduct
 from ngsolve import CoefficientFunction as CF
@@ -488,7 +488,7 @@ class AxisymViscElas:
 
                     if draw:
                         tr.Set(σh[0] + σh[2] + σh[3])
-                        ng.Redraw()
+                        ng.Redraw(blocking=True)
 
         print('\nSimulation done.')
         return cu, uht, cht, σht, ts

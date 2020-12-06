@@ -2,9 +2,16 @@
 
 ## Code
 
-* Prerequisites: Download and install NGSolve from ngsolve.org
+Provides python module `magmaxisym`.
 
+* Prerequisites: Download and install NGSolve from ngsolve.org
 * Main class file: axisymviscelas.py
+* Driver file example: scripts/demo.py
+* Interactive use: Make sure `magmaxisym` is in your PYTHONPATH, then import:
+
+```python
+import magmaxisym
+```
 
 ## Paper
 

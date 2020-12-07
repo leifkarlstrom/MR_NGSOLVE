@@ -345,15 +345,21 @@ class AxisymViscElas:
         F should be given as a 2-vector and G should be given as
         a 4-vector to represent the 3x3 matrix of the form of c.
 
-        OUTPUTS: cu, uht, cht, σht
-         - "cu"  is a composite grid function containing both c and u
-        at the last time step,
-         - "uht, cht, σht" contains the time history of displacement, c,
-        and stress, throughout the simulation, but skipping every "skip"
-        timesteps.
+        OUTPUTS: cu, uht, cht, sht
+
+         - "cu"  is a composite grid function containing both
+        c = Ce ε(uviscous) and displacement u at the last time step
+
+         - "uht, cht, sht" contains the time history of the
+        displacement u,  c = Ce ε(uviscous), and s = Ce ε(u),
+        throughout the simulation, but skipping every "skip" timesteps.
+
         - "ts" contains a list of time values corresponding to each grid
-        function in the uht, cht, σht time series. (Length of "ts" may be
+        function in the uht, cht, sht time series. (Length of "ts" may be
         shorter than number of timesteps depending on "skip".)
+
+        Note that s = Ce ε(u) is not the true viscoelastic stress
+        σ = Ce ε(uelastic). Clearly, s and σ are related by s = σ + c.
         """
 
         if not self.matready:
@@ -427,11 +433,11 @@ class AxisymViscElas:
         # Output fields
         V = ng.VectorH1(self.mesh, order=self.p)
         L = ng.L2(self.mesh, order=self.p, dim=4)
-        uht = ng.GridFunction(V, name='displacement', multidim=0)
-        σht = ng.GridFunction(L, name='stress', multidim=0)
+        uht = ng.GridFunction(V, name='u', multidim=0)
+        sht = ng.GridFunction(L, name='s', multidim=0)
         cht = ng.GridFunction(L, name='c', multidim=0)
-        uh = ng.GridFunction(V, name='displacement')
-        σh = ng.GridFunction(L, name='stress')
+        uh = ng.GridFunction(V, name='u')
+        σh = ng.GridFunction(L, name='s')
         ch = ng.GridFunction(L, name='c')
 
         urz = CF((u.components[0], u.components[1]))
@@ -441,15 +447,15 @@ class AxisymViscElas:
         ch.Set(CF((crr, crz, czz, cθθ)))
         uht.AddMultiDimComponent(uh.vec)
         cht.AddMultiDimComponent(ch.vec)
-        σht.AddMultiDimComponent(σh.vec)
+        sht.AddMultiDimComponent(σh.vec)
 
         if draw:
             tr = ng.GridFunction(ng.L2(self.mesh, order=self.p),
-                                 name='trace(stress)')
+                                 name='trace(s)')
             tr.Set(σh[0] + σh[2] + σh[3])
             ng.Draw(uh)
             ng.Draw(tr)
-            visoptions.vecfunction = 'displacement'
+            visoptions.vecfunction = 'u'
             SetVisualization(deformation=True)
 
         with ng.TaskManager():
@@ -484,14 +490,14 @@ class AxisymViscElas:
 
                     uht.AddMultiDimComponent(uh.vec)
                     cht.AddMultiDimComponent(ch.vec)
-                    σht.AddMultiDimComponent(σh.vec)
+                    sht.AddMultiDimComponent(σh.vec)
 
                     if draw:
                         tr.Set(σh[0] + σh[2] + σh[3])
                         ng.Redraw(blocking=True)
 
         print('\nSimulation done.')
-        return cu, uht, cht, σht, ts
+        return cu, uht, cht, sht, ts
 
     # Convenience facilities ############################################
 
@@ -500,8 +506,8 @@ class AxisymViscElas:
                probe=None):
         """
         Animate a previously computed time series of solutions.
-        Displacements for all time are input in "ut", and
-        and stresses in "st".
+        Displacements u and s = Ce ε(u) for all time are input in "ut" and
+        "st", respectively.
 
         To display a scalar function of stress, define your function
         elsewhere and pass it as input argument "sfun".

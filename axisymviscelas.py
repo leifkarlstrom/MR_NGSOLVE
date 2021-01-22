@@ -82,13 +82,8 @@ def ε(u):
     This only works when "u" is a CF expressed in terms of r and z. """
 
     ur, uz = u
-    if not isinstance(u, CF):
-        raise ValueError('Function ε(u) only works when u ' +
-                         'is a CoefficientFunction! type(u)=%s' % type(u))
-    drur = ur.Diff(r)  # Diff works for CF (grad works for test/trial fn)
-    dzur = ur.Diff(z)
-    druz = uz.Diff(r)
-    dzuz = uz.Diff(z)
+    drur, dzur = grad(ur)
+    druz, dzuz = grad(uz)
     return CF((drur, (druz+dzur)/2, dzuz, ur * rinv))
 
 
@@ -204,12 +199,8 @@ class AxisymViscElas:
 
         print('  Setting up static elastic system')
         u, v = self.U.TnT()
-        ur = u[0]
-        vr = v[0]
         a = ng.BilinearForm(self.U, symmetric=True)
-        a += 2 * self.mu * InnerProduct(εrz(u), εrz(v)) * r * drdz
-        a += 2 * self.mu * rinv * ur * vr * drdz
-        a += self.lam * (r * divrz(u) + ur) * (divrz(v) + rinv * vr) * drdz
+        a += ip(self.Ce(rε(u)), ε(v)) * drdz
 
         with ng.TaskManager():
             a.Assemble()
@@ -417,7 +408,7 @@ class AxisymViscElas:
             dγ = ds(bonus_intorder=1,
                     definedon=self.mesh.Boundaries(self.σbdry))
             σnv = ng.LinearForm(self.U)
-            sbdr = frc * v * r
+            sbdr = InnerProduct(frc, v) * r
             sbdr.Compile()
             σnv += sbdr * dγ
 
@@ -440,9 +431,8 @@ class AxisymViscElas:
         σh = ng.GridFunction(L, name='s')
         ch = ng.GridFunction(L, name='c')
 
-        urz = CF((u.components[0], u.components[1]))
-        uh.Set(urz)
-        σh.Set(self.Ce(ε(urz)))
+        uh.Set(CF((u.components[0], u.components[1])))
+        σh.Set(self.Ce(ε(u.components)))
         crr, crz, czz, cθθ = c.components
         ch.Set(CF((crr, crz, czz, cθθ)))
         uht.AddMultiDimComponent(uh.vec)
@@ -482,9 +472,8 @@ class AxisymViscElas:
                 # Store for output and visualize
                 if (i+1) % skip == 0:
                     ts.append(t.Get())
-                    urz = CF((u.components[0], u.components[1]))
-                    uh.Set(urz)
-                    σh.Set(self.Ce(ε(urz)))
+                    uh.Set(CF((u.components[0], u.components[1])))
+                    σh.Set(self.Ce(ε(u.components)))
                     crr, crz, czz, cθθ = c.components
                     ch.Set(CF((crr, crz, czz, cθθ)))
 

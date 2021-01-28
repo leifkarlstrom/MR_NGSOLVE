@@ -200,7 +200,7 @@ class AxisymViscElas:
         print('  Setting up static elastic system')
         u, v = self.U.TnT()
         a = ng.BilinearForm(self.U, symmetric=True)
-        a += ip(self.Ce(rε(u)), ε(v)) * drdz
+        a += fip(self.Ce(rε(u)), ε(v)) * drdz
 
         with ng.TaskManager():
             a.Assemble()
@@ -363,6 +363,8 @@ class AxisymViscElas:
         ts = [0]
 
         # Make the form  (Ce Av (Ce ε(u) - c) + G,  s)ᵣ
+        #    IMPORTANT:  The c system uses 4-vectors and requires
+        #    the use of ip(., .), not fip(., .)
         c, u = self.SU.TrialFunction()
         s = self.S.TestFunction()
         cupdate = ip(self.CeAv(self.Ce(rε(u))), s)
@@ -374,7 +376,9 @@ class AxisymViscElas:
                             nonassemble=True)
         b += cupdate * drdz
 
-        # Make the form  (-F - div c,  v)ᵣ after integrating by parts
+        # Make the form d(u, v) = -(F, v)ᵣ + (c, ε(v))ᵣ
+        #    IMPORTANT:  The u system requires Frobenius inner products
+        #    so we use fip(.,.), not 4-vector inner product ip(.,.)
         u, v = self.U.TnT()
         vr, vz = v
         v = tuple(v)
@@ -383,7 +387,7 @@ class AxisymViscElas:
 
         d = ng.BilinearForm(trialspace=self.S, testspace=self.U,
                             nonassemble=True)
-        dvol = ip(c, rε(v))
+        dvol = fip(c, rε(v))
         if F is not None:
             dvol += -InnerProduct(F, v) * r
         dvol.Compile()
@@ -461,7 +465,7 @@ class AxisymViscElas:
                 self.S.SolveM(rho=r, vec=s)
                 c.vec.data += dt * s
 
-                # Replace u by numerical solution of div(Ce ε(u)) = f + div(c)
+                # Put u = solution of (Ce ε(u), ε(v))ᵣ = (c, ε(v))ᵣ - (F, v)ᵣ
                 d.Apply(c.vec, w)
                 if tractionBC is not None:
                     σnv.Assemble()

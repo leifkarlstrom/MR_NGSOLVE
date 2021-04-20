@@ -478,10 +478,7 @@ class AxisymViscElas:
                       end='\r')
 
                 # Replace c by c + dt (Ce Av (Ce ε(u) - c) + G)
-                t0 = time.time()
                 b.Apply(cu.vec, s)
-                t1 = time.time()
-                print("time to complete a time step:{}s\n".format(t1-t0))
                 self.S.SolveM(rho=r, vec=s)
                 c.vec.data += dt * s
 

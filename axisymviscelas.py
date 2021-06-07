@@ -1,5 +1,7 @@
 from .cavitygeometry import region_outside_cavity
 import ngsolve as ng
+import numpy as np
+from scipy.fft import fft
 from ngsolve import dx, ds, grad, BND, InnerProduct
 from ngsolve import CoefficientFunction as CF
 from ngsolve.internal import visoptions
@@ -584,3 +586,41 @@ class AxisymViscElas:
         f1.Set(f, ng.BND)
         fv = f1.vec.FV().NumPy()[~V1.FreeDofs()]
         return min(fv), max(fv)
+
+    def surface_deformation(self, uₜ, grid_pts=100):
+        """Extract surface displacements from the numerical solution.
+
+        This is a post-processing function which accepts the multi-dimensional
+        displacement grid function uₜ and returns a list of surface
+        displacement profiles.
+        """
+        # grid function for holding the numerical solution
+        u = ng.GridFunction(uₜ.space, name='displacement')
+
+        # geometry parameters
+        params = self.geometryparams
+        Δr = params['Lr'] / grid_pts
+        rₛ = np.arange(0, params['Lr'], Δr).tolist()
+        zₛ = params['B'] + params['D']
+
+        pts = [self.mesh(pt, zₛ) for pt in rₛ]
+
+        uvals = []
+        for i in range(len(uₜ.vecs)):
+            u.vec.data = ut.vecs[i]
+            uvals.append([u(p) for p in pts])
+
+        # only need the z-component for surface displacements
+        U = [[w[i][1] for i in range(len(rₛ))] for w in uvals]
+        return U
+
+    def transfer_function(self, bdry_data, uₜ):
+        """Compute the transfer function between pressure and displacement.
+
+        This general transfer function compares the Fourier transformation of
+        pressures at the cavity wall with displacements at the Earth's surface.
+        """
+        U = self.surface_deformation(uₜ)
+        maxDisplacement = max([max(i) for i in U])
+
+        return fft(bdry_data) / maxDisplacement

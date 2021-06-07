@@ -230,6 +230,23 @@ class AxisymViscElas:
         """
         return dev(s) / self.tau
 
+    def CeAvCeε(self, u):
+        """ Return CeAvCe(ε(u)) = (2μ/τ) * dev(ε(u))
+        """
+        ur, uz = u
+        drur, dzur = grad(ur)
+        druz, dzuz = grad(uz)
+
+        ε_rr = drur
+        ε_zz = dzuz
+        ε_θθ = ur * rinv
+        ε_rz = (druz+dzur)/2
+        trε = ε_rr + ε_zz + ε_θθ
+
+        return (2 * self.mu / self.tau) * CF((ε_rr - trε/3,
+                                              ε_rz,
+                                              ε_zz - trε/3,
+                                              ε_θθ - trε/3))
     # Computational routines ############################################
 
     def temperature(self, temperatureBC, kappa=1):
@@ -367,7 +384,7 @@ class AxisymViscElas:
         #    the use of ip(., .), not fip(., .)
         c, u = self.SU.TrialFunction()
         s = self.S.TestFunction()
-        cupdate = ip(self.CeAv(self.Ce(rε(u))), s)
+        cupdate = ip(r * self.CeAvCeε(u), s)
         cupdate -= ip(self.CeAv(c), s) * r
         if G is not None:
             cupdate += ip(G, s) * r

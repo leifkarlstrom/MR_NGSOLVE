@@ -106,7 +106,7 @@ def compute_manufactured_soln(p=3, refine=0):
     # Time step and solve up to time T
     T = 1e-7
     cu, uht, cht, sht, ts =  \
-        ave.solve2(tfin=T, nsteps=1, u0=u0, c0=c0, t=t,
+        ave.solve2(tfin=T, u0=u0, c0=c0,  nsteps=1, t=t,
                    tractionBC=tractions, kinematicBC=uBC, G=G)
 
     # save

@@ -91,5 +91,5 @@ cθθ.Set(0)
 
 
 # Simulate
-cu, uht, cht, sht, ts = ave.solve2(tfin=1, nsteps=100, u0=u0, c0=c0, t=t,
+cu, uht, cht, sht, ts = ave.solve2(tfin=1, u0=u0, c0=c0, nsteps=100, t=t,
                                    tractionBC=σBC, draw=True)

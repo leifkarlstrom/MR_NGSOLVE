@@ -318,7 +318,7 @@ class AxisymViscElas:
             else:
                 u.vec[:] = 0.0
 
-    def solve2(self, tfin, nsteps, u0, c0,
+    def solve2(self, tfin, u0, c0, nsteps=1,
                t=None, F=None, kinematicBC=None, tractionBC=None, G=None,
                draw=False, skip=1):
         """
@@ -375,7 +375,18 @@ class AxisymViscElas:
         if not self.matready:
             raise Exception('Missing material parameters.')
 
+        # shortest relaxation time occurs at the reservoir boundary
+        τ = self.tau(self.mesh(self.geometryparams['A'], 0.0))
+
+        # check that nsteps gives stable time step dt < 2τ
         dt = tfin / nsteps
+        if not (dt < 2 * τ):
+            print('Setting a stable number of time steps.')
+
+            # choose stable time step using relaxation time τ.
+            dt = 1.0 * τ
+            nsteps = int(tfin // dt) + 1
+
         if t is None:
             t = ng.Parameter(0.0)
         t.Set(0.0)
@@ -473,6 +484,7 @@ class AxisymViscElas:
 
         with ng.TaskManager():
 
+            print(' {} total time steps specified.'.format(nsteps))
             for i in range(nsteps):
 
                 t.Set((i+1)*dt)
@@ -612,7 +624,7 @@ class AxisymViscElas:
 
         # only need the z-component for surface displacements
         U = [[w[i][1] for i in range(len(rₛ))] for w in uvals]
-        return U
+        return U, rₛ
 
     def transfer_function(self, bdry_data, uₜ):
         """Compute the transfer function between pressure and displacement.

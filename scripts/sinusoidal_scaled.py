@@ -99,5 +99,5 @@ cθθ.Set(0)
 
 
 # simulate
-cu = ave.solve2(tfin=K, nsteps=200, u0=u0, c0=c0, t=t, tractionBC=σBC,
+cu = ave.solve2(tfin=K, u0=u0, c0=c0, nsteps=200, t=t, tractionBC=σBC,
                 draw=True)

@@ -296,9 +296,22 @@ class AxisymViscElas:
         if F is not None:
             f += InnerProduct(F, v) * r * drdz
         if tractionBC is not None:
-            dγ = ds(skeleton=True, bonus_intorder=1,
-                    definedon=self.mesh.Boundaries(self.σbdry))
-            f += (tractionBC * n) * v * r * dγ
+            if isinstance(tractionBC, CF):
+                frc = tractionBC * n
+            else:
+                if isinstance(tractionBC, dict):
+                    f0 = CF((0, 0,
+                             0, 0), dims=(2, 2))
+                    frc = self.mesh.BoundaryCF(tractionBC, default=f0) * n
+                else:
+                    raise ValueError('Give tractionBC as a CF or a dict')
+        frc.Compile()
+
+        dγ = ds(bonus_intorder=1,
+                definedon=self.mesh.Boundaries(self.σbdry))
+        sbdr = InnerProduct(frc, v) * r
+        sbdr.Compile()
+        f += sbdr * dγ
 
         with ng.TaskManager():
             f.Assemble()

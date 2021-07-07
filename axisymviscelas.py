@@ -642,10 +642,79 @@ class AxisymViscElas:
     def transfer_function(self, bdry_data, uₜ):
         """Compute the transfer function between pressure and displacement.
 
-        This general transfer function compares the Fourier transformation of
-        pressures at the cavity wall with displacements at the Earth's surface.
+        This general transfer function compares pressures at the cavity wall
+        with displacements at the Earth's surface. The comparison is done in
+        the frequency domain by applying the Fourier transform to both the
+        pressure time series and diplacement time series.
         """
-        U = self.surface_deformation(uₜ)
-        maxDisplacement = max([max(i) for i in U])
+        U, _ = self.surface_deformation(uₜ)
+        abs_U = [[abs(i) for i in u] for u in U]
 
-        return fft(bdry_data) / maxDisplacement
+        # time step where max uplift is achieved
+        t_idx = abs_U.index(max(abs_U))
+        # point in space where max uplift occurs
+        r_idx = abs_U[t_idx].index(max(abs_U[t_idx]))
+
+        ũₜ = fft([u[r_idx] for u in U])
+
+        return ũₜ / fft(bdry_data)
+
+    def phase_lag(self, uₜ, σₜ, cₜ, ts, k=0.0):
+        """Compute phase lag between stress and strain.
+
+        Selects a point on the reservoir boundary and compares σn⋅n and
+        εn⋅n where n is the outward unit normal along the reservoir ellipse.
+        uₜ, σₜ, cₜ. and ts are all outputs of the method solve2.
+
+        uₜ is a grid function containing the displacements in time and is used
+        to compute the strain time series for phase_lag analysis.
+
+        Stress is computed by σ = σₜ - cₜ.
+
+        ts is a list containing the discrete time values used in the
+        simulation.
+
+        -π/2 ≦ k ≦ π/2 parametrizes the reservoir ellipse.
+        """
+        params = self.geometryparams
+
+        # Compute σρρ
+        displacement = ng.GridFunction(uₜ.space, name='displacement')
+        stress = ng.GridFunction(σₜ.space, name='stress')
+
+        ρ = np.sqrt(params['B']**2 * ng.cos(k)**2 +
+                    params['A']**2 * ng.sin(k)**2)
+        point = self.mesh(params['A']*ng.cos(k), params['B']*ng.sin(k))
+        normal = np.array([-params['B']*ng.cos(k)/ρ, -params['A']*ng.sin(k)/ρ])
+
+        σvals = []
+        εvals = []
+
+        for i in range(len(σₜ.vecs)):
+            stress.vec.data = σₜ.vecs[i] - cₜ.vecs[i]
+            displacement.vec.data = uₜ.vecs[i]
+
+            σvals.append(stress(point))
+            εvals.append(ε(displacement.components)(point))
+
+        strains = [np.array([[e[0], e[1]],
+                             [e[1], e[2]]]) for e in εvals]
+        stresses = [np.array([[s[0], s[1]],
+                              [s[1], s[2]]]) for s in σvals]
+        enn = [(e @ normal).dot(normal) for e in strains]
+        snn = [(s @ normal).dot(normal) for s in stresses]
+
+        # isolate a sub-interval of length 2π
+        lower_idx = np.argmin(np.abs(np.array(ts)-(0 * np.pi)))
+        upper_idx = np.argmin(np.abs(np.array(ts)-(2 * np.pi)))
+
+        # find minimal stress occuring on the chosen sub-interval
+        idx = np.argmin(np.abs(np.array(snn[lower_idx:upper_idx]) -
+                        min(snn[lower_idx:upper_idx])))
+
+        idx += lower_idx
+        # find minimal value attained by strain occuring after the min stress
+        lag_idx = np.argmin(np.abs(np.array(enn[idx:upper_idx]) -
+                            min(enn[idx:upper_idx])))
+
+        return ts[idx + lag_idx] - ts[idx]

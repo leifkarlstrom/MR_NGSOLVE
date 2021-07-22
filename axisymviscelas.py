@@ -1,7 +1,7 @@
 from .cavitygeometry import region_outside_cavity
 import ngsolve as ng
 import numpy as np
-from scipy.fft import fft
+from scipy.signal import hilbert
 from ngsolve import dx, ds, grad, BND, InnerProduct
 from ngsolve import CoefficientFunction as CF
 from ngsolve.internal import visoptions
@@ -116,14 +116,18 @@ class AxisymViscElas:
     a region outside a magma cavity.
     """
 
-    def __init__(self, mu=0.5, lam=4.0, tau=1, A=4, B=4, D=5, Lr=10, Lz=None,
-                 hcavity=0.5, hglobal=1, p=2,  tractionBCparts='',
-                 kinematicBCparts='axis|cavity|top|rgt|bot',
-                 refine=0, curvedegree=2):
+    def __init__(self, mu=0.5, lam=4.0, eta=0.5, tau=1, om=None, A=4, B=4, D=5,
+                 Lr=10, Lz=None, hcavity=0.5, hglobal=1, p=2,
+                 tractionBCparts='',
+                 kinematicBCparts='axis|cavity|top|rgt|bot', refine=0,
+                 curvedegree=2):
         """
         INPUTS:
-           mu, lam, tau: Lame elastic parameters (mu, lam) and
+           mu, lam, eta, tau: Lame elastic parameters (mu, lam) and
         viscoelastic relaxation time (tau = eta/mu, where eta=viscosity).
+
+           om: Angular frequency associated with periodic data imposed at the
+        reservoir boundary.
 
            A, B, D, Lr, Lz: Magma cavity is ellipsoidal of r-semimajor
         axis length A, z-semiminor axis B. Terrain is at distance D from
@@ -169,6 +173,8 @@ class AxisymViscElas:
             self.mu = CF(mu)
             self.lam = CF(lam)
             self.tau = CF(tau)
+            self.eta = CF(eta)
+            self.om = om
             self.matready = True
             self.initFEfacilities()
         else:
@@ -331,7 +337,7 @@ class AxisymViscElas:
             else:
                 u.vec[:] = 0.0
 
-    def solve2(self, tfin, u0, c0, nsteps=1,
+    def solve2(self, tfin, u0, c0, nsteps=None,
                t=None, F=None, kinematicBC=None, tractionBC=None, G=None,
                draw=False, skip=1):
         """
@@ -368,6 +374,9 @@ class AxisymViscElas:
         F should be given as a 2-vector and G should be given as
         a 4-vector to represent the 3x3 matrix of the form of c.
 
+        Note that the number of time steps, nsteps, can be manually specified
+        but should only be used when inputting a stable number of time steps.
+
         OUTPUTS: cu, uht, cht, sht
 
          - "cu"  is a composite grid function containing both
@@ -391,14 +400,19 @@ class AxisymViscElas:
         # shortest relaxation time occurs at the reservoir boundary
         τ = self.tau(self.mesh(self.geometryparams['A'], 0.0))
 
-        # check that nsteps gives stable time step dt < 2τ
-        dt = tfin / nsteps
-        if not (dt < 2 * τ):
-            print('Setting a stable number of time steps.')
-
+        if nsteps is not None:
+            dt = tfin / nsteps
+            assert (dt < 2 * τ), "Unstable time step."
+        else:
             # choose stable time step using relaxation time τ.
-            dt = 1.0 * τ
-            nsteps = int(tfin // dt) + 1
+            dt = 0.25 * τ
+
+        if self.om is not None:
+            # use a sampling period
+            δₙ = self.sampling_period(tfin)
+
+            dt = min(dt, δₙ)
+        nsteps = int(tfin // dt)
 
         if t is None:
             t = ng.Parameter(0.0)
@@ -612,6 +626,28 @@ class AxisymViscElas:
         fv = f1.vec.FV().NumPy()[~V1.FreeDofs()]
         return min(fv), max(fv)
 
+    def sampling_period(self, k):
+        """Determine an appropriate sampling rate for boundary data.
+
+        For a boundary signal with angular frequency self.om, which perists
+        over a time interval of length k, return a timestep which avoids
+        aliasing the signal by satisfying the Nyquist-Shannon criterion.
+        """
+
+        # check if the system has been scaled in time
+        err = self.eta/self.mu - self.tau
+        norm = ng.Integrate(ng.InnerProduct(err, err), self.mesh)
+
+        if norm < 10e-11:
+            ω = self.om
+        else:
+            ω = 1.0
+        # get ordinary frequency f from angular frequency ω and isolate
+        # Nyquist rate
+        f = (2 * ω * k + np.pi) / (2*np.pi)
+        δ = 1 / f
+        return δ
+
     def surface_deformation(self, uₜ, grid_pts=100):
         """Extract surface displacements from the numerical solution.
 
@@ -643,9 +679,10 @@ class AxisymViscElas:
         """Compute the transfer function between pressure and displacement.
 
         This general transfer function compares pressures at the cavity wall
-        with displacements at the Earth's surface. The comparison is done in
-        the frequency domain by applying the Fourier transform to both the
-        pressure time series and diplacement time series.
+        with displacements at the Earth's surface. The comparison is done by
+        transforming the input signal bdry_data and the response signal uₜ to
+        their respective analytic signals. Output is given as a ratio of the
+        analytic response to the analytic input signal.
         """
         U, _ = self.surface_deformation(uₜ)
         abs_U = [[abs(i) for i in u] for u in U]
@@ -655,26 +692,28 @@ class AxisymViscElas:
         # point in space where max uplift occurs
         r_idx = abs_U[t_idx].index(max(abs_U[t_idx]))
 
-        ũₜ = fft([u[r_idx] for u in U])
+        ũₜ = hilbert([u[r_idx] for u in U])
 
-        return ũₜ / fft(bdry_data)
+        return ũₜ / hilbert(bdry_data)
 
-    def phase_lag(self, uₜ, σₜ, cₜ, ts, k=0.0):
+    def phase_lag(self, uₜ, σₜ, cₜ, k=0.0):
         """Compute phase lag between stress and strain.
 
         Selects a point on the reservoir boundary and compares σn⋅n and
         εn⋅n where n is the outward unit normal along the reservoir ellipse.
-        uₜ, σₜ, cₜ. and ts are all outputs of the method solve2.
+        uₜ, σₜ, and cₜ are all outputs of the method solve2.
 
         uₜ is a grid function containing the displacements in time and is used
         to compute the strain time series for phase_lag analysis.
 
         Stress is computed by σ = σₜ - cₜ.
 
-        ts is a list containing the discrete time values used in the
-        simulation.
-
         -π/2 ≦ k ≦ π/2 parametrizes the reservoir ellipse.
+
+        Phase lag is computed by extracting a time series, for both stress and
+        strain, and extending each to their respective analytic signal. The
+        ratio of analytic signals is a complex number with real and imaginary
+        components defining the angle of phase lag between stress and strain.
         """
         params = self.geometryparams
 
@@ -704,17 +743,4 @@ class AxisymViscElas:
         enn = [(e @ normal).dot(normal) for e in strains]
         snn = [(s @ normal).dot(normal) for s in stresses]
 
-        # isolate a sub-interval of length 2π
-        lower_idx = np.argmin(np.abs(np.array(ts)-(0 * np.pi)))
-        upper_idx = np.argmin(np.abs(np.array(ts)-(2 * np.pi)))
-
-        # find minimal stress occuring on the chosen sub-interval
-        idx = np.argmin(np.abs(np.array(snn[lower_idx:upper_idx]) -
-                        min(snn[lower_idx:upper_idx])))
-
-        idx += lower_idx
-        # find minimal value attained by strain occuring after the min stress
-        lag_idx = np.argmin(np.abs(np.array(enn[idx:upper_idx]) -
-                            min(enn[idx:upper_idx])))
-
-        return ts[idx + lag_idx] - ts[idx]
+        return np.angle(hilbert(enn) / hilbert(snn))

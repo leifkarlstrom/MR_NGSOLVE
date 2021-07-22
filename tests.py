@@ -48,7 +48,7 @@ def test_cupdate():
     czz.Set(1)
     cθθ.Set(1)
 
-    cu, _, _, _, _ = ave.solve2(1, u0, c0, 1, override=True)
+    cu, _, _, _, _ = ave.solve2(1, u0, c0, 1)
 
     cexact = CF((1, 0, 1, 1)) + ave.CeAv((9*z, (r-1)/2, 8*z, 9*z))
 

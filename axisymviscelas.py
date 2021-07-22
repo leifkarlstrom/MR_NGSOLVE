@@ -337,9 +337,9 @@ class AxisymViscElas:
             else:
                 u.vec[:] = 0.0
 
-    def solve2(self, tfin, u0, c0, nsteps=1,
+    def solve2(self, tfin, u0, c0, nsteps=None,
                t=None, F=None, kinematicBC=None, tractionBC=None, G=None,
-               draw=False, skip=1, override=False):
+               draw=False, skip=1):
         """
         This function numerically solves for
                u(r, z, t) = uviscous + uelastic, and
@@ -374,6 +374,9 @@ class AxisymViscElas:
         F should be given as a 2-vector and G should be given as
         a 4-vector to represent the 3x3 matrix of the form of c.
 
+        Note that the number of time steps, nsteps, can be manually specified
+        but should only be used when inputting a stable number of time steps.
+
         OUTPUTS: cu, uht, cht, sht
 
          - "cu"  is a composite grid function containing both
@@ -397,24 +400,19 @@ class AxisymViscElas:
         # shortest relaxation time occurs at the reservoir boundary
         τ = self.tau(self.mesh(self.geometryparams['A'], 0.0))
 
-        if override is True:
+        if nsteps is not None:
             dt = tfin / nsteps
             assert (dt < 2 * τ), "Unstable time step."
         else:
-            # check that nsteps gives stable time step dt < 2τ
-            dt = tfin / nsteps
-            if (not (dt < τ)):
-                print('Setting a stable number of time steps.')
+            # choose stable time step using relaxation time τ.
+            dt = 0.25 * τ
 
-                # choose stable time step using relaxation time τ.
-                dt = 0.25 * τ
+        if self.om is not None:
+            # use a sampling period
+            δₙ = self.sampling_period(tfin)
 
-            if self.om is not None:
-                # use a sampling frequency
-                δₙ = self.sampling_period(tfin)
-
-                dt = min(dt, δₙ)
-            nsteps = int(tfin // dt)
+            dt = min(dt, δₙ)
+        nsteps = int(tfin // dt)
 
         if t is None:
             t = ng.Parameter(0.0)

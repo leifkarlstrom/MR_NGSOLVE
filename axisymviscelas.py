@@ -668,12 +668,13 @@ class AxisymViscElas:
 
         uvals = []
         for i in range(len(uₜ.vecs)):
-            u.vec.data = ut.vecs[i]
+            u.vec.data = uₜ.vecs[i]
             uvals.append([u(p) for p in pts])
 
         # only need the z-component for surface displacements
-        U = [[w[i][1] for i in range(len(rₛ))] for w in uvals]
-        return U, rₛ
+        Uz = [[w[i][1] for i in range(len(rₛ))] for w in uvals]
+        Ur = [[w[i][0] for i in range(len(rₛ))] for w in uvals]
+        return Uz, Ur, rₛ
 
     def transfer_function(self, bdry_data, uₜ):
         """Compute the transfer function between pressure and displacement.
@@ -684,7 +685,7 @@ class AxisymViscElas:
         their respective analytic signals. Output is given as a ratio of the
         analytic response to the analytic input signal.
         """
-        U, _ = self.surface_deformation(uₜ)
+        U, _, _ = self.surface_deformation(uₜ)
         abs_U = [[abs(i) for i in u] for u in U]
 
         # time step where max uplift is achieved
@@ -692,8 +693,8 @@ class AxisymViscElas:
         # point in space where max uplift occurs
         r_idx = abs_U[t_idx].index(max(abs_U[t_idx]))
 
-        ũₜ = hilbert([u[r_idx] for u in U])
-
+        ũₜ = [u[r_idx] for u in U]
+        ũₜ = hilbert(ũₜ - np.sum(ũₜ)/len(ũₜ))
         return ũₜ / hilbert(bdry_data)
 
     def phase_lag(self, uₜ, σₜ, cₜ, k=0.0):
@@ -743,4 +744,5 @@ class AxisymViscElas:
         enn = [(e @ normal).dot(normal) for e in strains]
         snn = [(s @ normal).dot(normal) for s in stresses]
 
+        enn = enn - sum(enn)/len(enn)
         return np.angle(hilbert(enn) / hilbert(snn))

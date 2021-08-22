@@ -332,8 +332,15 @@ class AxisymViscElas:
     def setkinematicbc(self, u, kinematicBC=None):
         with ng.TaskManager():
             if kinematicBC is not None:
-                u.components[0].Set(kinematicBC[0], BND)
-                u.components[1].Set(kinematicBC[1], BND)
+                if isinstance(kinematicBC, CF):
+                    u.components[0].Set(kinematicBC[0], BND)
+                    u.components[1].Set(kinematicBC[1], BND)
+                else:
+                    if isinstance(kinematicBC, dict):
+                        udef = CF((0, 0))
+                        BCF = self.mesh.BoundaryCF(kinematicBC, default=udef)
+                        u.components[0].Set(BCF[0], BND)
+                        u.components[1].Set(BCF[1], BND)
             else:
                 u.vec[:] = 0.0
 

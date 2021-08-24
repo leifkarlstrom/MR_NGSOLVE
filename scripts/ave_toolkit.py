@@ -10,8 +10,8 @@ class AveToolkit(AxisymViscElas):
 
     def __init__(self, mu=0.5, lam=4.0, eta=1.0, tau=2.0, om=1e-7, A=2000,
                  B=2000, D=5000, Lr=20000, Lz=None, p=4, refine=1, hcavity=4,
-                 hglobal=4, curvedegree=2, tractionBCparts='cavity|top',
-                 kinematicBCparts='axis|rgt|bot'):
+                 hglobal=4, curvedegree=2, tractionBCparts='cavity|top|bot',
+                 kinematicBCparts='axis|rgt'):
         """Doc."""
         self.length_scale = A
         self.time_scale = om
@@ -41,7 +41,7 @@ class AveToolkit(AxisymViscElas):
                          tractionBCparts=tractionBCparts,
                          kinematicBCparts=kinematicBCparts)
 
-        self.K = 2 * np.pi * 5
+        self.K = 2 * np.pi * 4
 
         # Time as a parameter whose value can be set later
         self.t = ng.Parameter(0.0)
@@ -71,8 +71,13 @@ class AveToolkit(AxisymViscElas):
         toptraction = CF((0, 0,
                           0, 0), dims=(2, 2))
 
-        self.σBC = {'cavity': cavitytraction, 'top': toptraction}
-        # boundary data for remote and depth boundaries
+        bottraction = CF((0, 0,
+                          0, 0), dims=(2, 2))
+
+        self.σBC = {'cavity': cavitytraction, 'top': toptraction,
+                    'bot': bottraction}
+
+        # boundary data for remote boundaries
         self.uBC = CF((0, 0))
 
         # initial data (on displacement and viscous stress)
@@ -131,10 +136,11 @@ class AveToolkit(AxisymViscElas):
         self.T = self.temperature(temperatureBC={'cavity': Tₗ,
                                   'bot|top|rgt': lateral_bd}, kappa=2)
 
-    def temperature_dependence(self, geotherm_grad=20, threshold=600):
+    def temperature_dependence(self, threshold=300):
         """Set temperature dependent material parameters for the system."""
 
-        self.geotherm_bvp(grad=geotherm_grad)
+        self.geotherm_bvp(self.temp_liquidus, self.temp_surface,
+                          self.geotherm_grad)
 
         # set the temp. threshold for elastic behavior; anything colder than
         # this temp will get the same viscosity
@@ -158,7 +164,7 @@ class AveToolkit(AxisymViscElas):
         νₘₐₓ = 0.49
         νₘᵢₙ = 0.25
 
-        E = a * (1 - (erf(self.T - Tc).real / s)) + b * self.T + c
+        E = a * (1 - (erf(T2 - Tc).real / s)) + b * T2 + c
 
         ν = (1 - E / Eₘₐₓ) * (νₘₐₓ - νₘᵢₙ) + νₘᵢₙ
 
@@ -168,7 +174,28 @@ class AveToolkit(AxisymViscElas):
         μ = CF((1/self.stress_scale) * E / (2 * (1 + ν)))
         τ = CF(η / (μ * self.stress_scale))
         De = CF(τ * self.time_scale)
-        self.setmaterials(μ, λ, De)
+
+        # update toolkit attributes
+        self.lam = λ
+        self.mu = μ
+        self.tau = De
+        self.eta = η
+        self.initFEfacilities()
+
+    def get_temp_threshold(self, De=100):
+        """Find threshold temperature associated with a Deborah number De. """
+        param = self.geometryparams
+
+        self.temperature_dependence(threshold=300)
+        # search along horizontal surface (rₛ, 0)
+        rₛ = np.arange(param['A'], param['Lr'], 0.001)
+        Debs = [self.tau(self.mesh(i, 0.0)) for i in rₛ]
+
+        # find value and index for list element nearest to De
+        val = min(Debs, key=lambda x: abs(x-De))
+        idx = Debs.index(val)
+
+        return self.T(self.mesh(rₛ[idx], 0.0))
 
     def run_simulation(self):
         cu, uht, cht, sht, ts = self.solve2(tfin=self.K, u0=self.u0,
@@ -176,6 +203,11 @@ class AveToolkit(AxisymViscElas):
                                             kinematicBC=self.uBC,
                                             tractionBC=self.σBC, draw=True)
         return cu, uht, cht, sht, ts
+
+    def set_thermal_params(self, Tₗ=1000, Tₛ=25, grad=20):
+        self.geotherm_grad = grad
+        self.temp_liquidus = Tₗ
+        self.temp_surface = Tₛ
 
     def set_domain_geometry(self, a=None, b=None, d=None, lr=None, lz=None):
         """Manually set parameters for the domain geometry.

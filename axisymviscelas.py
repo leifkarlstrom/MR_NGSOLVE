@@ -683,6 +683,33 @@ class AxisymViscElas:
         Ur = [[w[i][0] for i in range(len(rₛ))] for w in uvals]
         return Uz, Ur, rₛ
 
+    def volume_change(self, uₜ):
+        """Compute the change in reservoir volume at each point in time.
+
+        Given displacement time series uₜ, return the approximate change in the
+        reservoir volume that occurs at each point int time. This approximation
+        is computed by integrating displacments (along the reservoir boundary)
+        in the direction of the unit normal vector n.
+        """
+        params = self.geometryparams
+
+        # initial volume given by half the area of ellipse with radii A, B
+        v0 = np.pi * params['A'] * params['B'] / 2
+        Δv = [v0]
+
+        # displacement grid function and outward unit normal
+        u = ng.GridFunction(uₜ.space, name='displacement')
+        n = ng.specialcf.normal(self.mesh.dim)
+
+        # iterate over time and compute volume change at each time step
+        for i in range(len(uₜ.vecs)):
+            u.vec.data = uₜ.vecs[i]
+            cfu = CF((u.components[0], u.components[1]))
+            δv = ng.Integrate(ng.InnerProduct(cfu, n), self.mesh,
+                              definedon=self.mesh.Boundaries('cavity'))
+            Δv.append(v0 - δv)
+        return Δv
+
     def transfer_function(self, bdry_data, uₜ):
         """Compute the transfer function between pressure and displacement.
 
@@ -701,7 +728,12 @@ class AxisymViscElas:
         r_idx = abs_U[t_idx].index(max(abs_U[t_idx]))
 
         ũₜ = [u[r_idx] for u in U]
-        ũₜ = hilbert(ũₜ - np.sum(ũₜ)/len(ũₜ))
+        ũₜ = hilbert(ũₜ)
+
+        # system response may be shifted in the complex plane so we correct
+        # by shifting the transfer function to be centered about the origin.
+        ctr_pt = np.sum(ũₜ) / len(ũₜ)
+        ũₜ = ũₜ - ctr_pt
         return ũₜ / hilbert(bdry_data)
 
     def phase_lag(self, uₜ, σₜ, cₜ, k=0.0):
@@ -751,5 +783,10 @@ class AxisymViscElas:
         enn = [(e @ normal).dot(normal) for e in strains]
         snn = [(s @ normal).dot(normal) for s in stresses]
 
-        enn = enn - sum(enn)/len(enn)
-        return np.angle(hilbert(enn) / hilbert(snn))
+        # extend response signal (strain) to its analytic signal
+        enn = hilbert(enn)
+        # shift analytic response signal to be centered at origin
+        ctr_pt = np.sum(enn) / len(enn)
+        enn = enn - ctr_pt
+
+        return np.angle(enn / hilbert(snn))

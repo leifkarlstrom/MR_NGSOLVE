@@ -8,14 +8,14 @@ from ngsolve.special_functions import erf
 class AveToolkit(AxisymViscElas):
     """Class implementing facilities to aid in parameter studies."""
 
-    def __init__(self, mu=0.5, lam=4.0, eta=1.0, tau=2.0, om=1e-7, A=2000,
-                 B=2000, D=5000, Lr=20000, Lz=None, p=4, refine=1, hcavity=4,
+    def __init__(self, mu=1e10, lam=1e10, eta=1e19, tau=1e9, om=1e-7, A=2000,
+                 B=2000, D=6000, Lr=20000, Lz=None, p=4, refine=1, hcavity=4,
                  hglobal=4, curvedegree=2, tractionBCparts='cavity|top|bot',
                  kinematicBCparts='axis|rgt'):
         """Doc."""
         self.length_scale = A
         self.time_scale = om
-        self.stress_scale = 1  # 10e6
+        self.stress_scale = 1#10e6
         self.T = None
 
         # scale geometric parameters
@@ -41,7 +41,7 @@ class AveToolkit(AxisymViscElas):
                          tractionBCparts=tractionBCparts,
                          kinematicBCparts=kinematicBCparts)
 
-        self.K = 2 * np.pi * 4
+        self.K = 2 * np.pi * 6
 
         # Time as a parameter whose value can be set later
         self.t = ng.Parameter(0.0)
@@ -115,13 +115,15 @@ class AveToolkit(AxisymViscElas):
         if P['Lz'] is not None:
             P['Lz'] = P['Lz'] / self.length_scale
 
-    def geotherm_bvp(self, Tₗ=1000, Tₛ=25, grad=20):
+    def geotherm_bvp(self, Tₗ=1273.15, Tₛ=298.15, grad=20, gₗ=1223.15):
         """Solve an equilibrium geotherm boundary value problem.
 
         INPUTS:
-            Tₗ: liquidus temperature of magma (ᵒC)
-            Tₛ: temperature at Earth's surface (ᵒC)
-            ΔT: rate of temperature increase with resepect to depth (ᵒC/km)
+            Tₗ: liquidus temperature of magma (K)
+            Tₛ: temperature at Earth's surface (K)
+            ΔT: rate of temperature increase with resepect to depth (K/km)
+            gₗ: geothermal limit set to avoid excessively low viscosities at
+                depth.
         """
         # equilibrium geotherm boundary conditions
         params = self.geometryparams
@@ -131,6 +133,9 @@ class AveToolkit(AxisymViscElas):
         ΔT = grad * (self.length_scale / 1000)
 
         lateral_bd = Tₛ - (z - cavity_depth)*ΔT
+
+        # truncate lateral boundary temps with geothermal limit
+        lateral_bd = ng.IfPos(gₗ-lateral_bd, lateral_bd, gₗ)
 
         # get temperatures as the solution to a steady state diffusion problem
         self.T = self.temperature(temperatureBC={'cavity': Tₗ,
@@ -151,6 +156,7 @@ class AveToolkit(AxisymViscElas):
         G = 141e3       # activation energy for creep
         A = 4.25e7      # material dependent constant for viscosity law
 
+        # truncate viscosity to avoid undrealistic values
         η = A * ng.exp(G / (B * T2))  # Arhennius Law for viscosity
 
         # parameters for fitting temperature-dependent Young's modulus
@@ -164,7 +170,7 @@ class AveToolkit(AxisymViscElas):
         νₘₐₓ = 0.49
         νₘᵢₙ = 0.25
 
-        E = a * (1 - (erf(T2 - Tc).real / s)) + b * T2 + c
+        E = a * (1 - (erf(self.T - Tc).real / s)) + b * self.T + c
 
         ν = (1 - E / Eₘₐₓ) * (νₘₐₓ - νₘᵢₙ) + νₘᵢₙ
 
@@ -186,7 +192,7 @@ class AveToolkit(AxisymViscElas):
         """Find threshold temperature associated with a Deborah number De. """
         param = self.geometryparams
 
-        self.temperature_dependence(threshold=300)
+        self.temperature_dependence(threshold=298.15)
         # search along horizontal surface (rₛ, 0)
         rₛ = np.arange(param['A'], param['Lr'], 0.001)
         Debs = [self.tau(self.mesh(i, 0.0)) for i in rₛ]

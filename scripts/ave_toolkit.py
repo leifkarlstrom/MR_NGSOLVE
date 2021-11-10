@@ -15,7 +15,7 @@ class AveToolkit(AxisymViscElas):
         """Doc."""
         self.length_scale = A
         self.time_scale = om
-        self.stress_scale = 1#10e6
+        self.stress_scale = 10e6
         self.T = None
 
         # scale geometric parameters

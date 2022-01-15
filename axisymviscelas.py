@@ -655,6 +655,73 @@ class AxisymViscElas:
         δ = 1 / f
         return δ
 
+    def reservoir_stress(self, cₜ, σₜ, k=0.0):
+        """Compute stress terms along the wall of the ellipsoidal reservoir.
+
+        Given the 'viscous stress' cₜ and 'total stress' σₜ (both
+        multi-dimensional grid function time series) compute stress at the
+        point (Acos(k), Bsin(k)) on the reservoir wall. Stress σ is computed
+        using σ = σₜ - cₜ at each point in time. This function determines the
+        component of stress acting orthogonal to the reservoir wall along the
+        outward unit normal n. That is, the function outputs σn⋅n at each time
+        step
+        """
+        params = self.geometryparams
+        σvals = []
+
+        # Compute σρρ
+        stress = ng.GridFunction(σₜ.space, name='stress')
+
+        ρ = np.sqrt(params['B']**2 * ng.cos(k)**2 +
+                    params['A']**2 * ng.sin(k)**2)
+        point = self.mesh(params['A'] * ng.cos(k), params['B'] * ng.sin(k))
+        normal = np.array([-params['B'] * ng.cos(k)/ρ,
+                           -params['A'] * ng.sin(k)/ρ])
+
+        for i in range(len(σₜ.vecs)):
+            stress.vec.data = σₜ.vecs[i] - cₜ.vecs[i]
+
+            σvals.append(stress(point))
+
+        stresses = [np.array([[s[0], s[1]],
+                              [s[1], s[2]]]) for s in σvals]
+
+        snn = [-(s @ normal).dot(normal) for s in stresses]
+
+        return snn
+
+    def reservoir_strain(self, uₜ, k=0.0):
+        """Compute strain terms along the wall of the ellipsoidal reservoir.
+
+        Given the displacement time series uₜ (input as a multi-dimensional
+        grid function) compute strain at the point (Acos(k), Bsin(k)) on the
+        reservoir wall. Strain ε is computed using the displacement-strain
+        relations. Similar to reservoir_stress(), this function outputs
+        εn⋅n.
+        """
+        params = self.geometryparams
+        εvals = []
+        # Compute ερρ
+        displacement = ng.GridFunction(uₜ.space, name='displacement')
+
+        ρ = np.sqrt(params['B']**2 * ng.cos(k)**2 +
+                    params['A']**2 * ng.sin(k)**2)
+        point = self.mesh(params['A'] * ng.cos(k), params['B'] * ng.sin(k))
+        normal = np.array([-params['B'] * ng.cos(k)/ρ,
+                           -params['A'] * ng.sin(k)/ρ])
+
+        for i in range(len(uₜ.vecs)):
+            displacement.vec.data = uₜ.vecs[i]
+
+            εvals.append(ε(displacement.components)(point))
+
+        strains = [np.array([[e[0], e[1]],
+                             [e[1], e[2]]]) for e in εvals]
+
+        enn = [-(e @ normal).dot(normal) for e in strains]
+
+        return enn
+
     def surface_deformation(self, uₜ, grid_pts=100):
         """Extract surface displacements from the numerical solution.
 
@@ -678,10 +745,32 @@ class AxisymViscElas:
             u.vec.data = uₜ.vecs[i]
             uvals.append([u(p) for p in pts])
 
-        # only need the z-component for surface displacements
         Uz = [[w[i][1] for i in range(len(rₛ))] for w in uvals]
         Ur = [[w[i][0] for i in range(len(rₛ))] for w in uvals]
         return Uz, Ur, rₛ
+
+    def max_uplift(self, uₜ):
+        """Return the displacement time series at the point of maximal uplift.
+
+        Given the multi-dimensional grid function uₜ find the spatial location
+        at the Earth's surface where maximum vertical uplift is achieved. Use
+        this point in space to generate a displacement time series.
+        """
+        U, _, _ = self.surface_deformation(uₜ)
+
+        # For now, fix spatial point at Earth's surface, r=0
+        r_idx = 0
+
+        # uncomment the following if you wish to determine where the point of
+        # maximal uplift occurs along the Earth's surface. This finds a
+        # timestep where max uplift is achieved then determines which point in
+        # space the max occurs at.
+        # abs_U = [[abs(i) for i in u] for u in U]
+        # t_idx = abs_U.index(max(abs_U))
+        # r_idx = abs_U[t_idx].index(max(abs_U[t_idx]))
+
+        ũₜ = [u[r_idx] for u in U]
+        return ũₜ
 
     def volume_change(self, uₜ):
         """Compute the change in reservoir volume at each point in time.
@@ -710,31 +799,45 @@ class AxisymViscElas:
             Δv.append(v0 - δv)
         return Δv
 
-    def transfer_function(self, bdry_data, uₜ):
-        """Compute the transfer function between pressure and displacement.
+    def transfer_function(self, input, response, ts, spinup_period=2*np.pi):
+        """Compute the transfer function between input and response signals.
 
-        This general transfer function compares pressures at the cavity wall
-        with displacements at the Earth's surface. The comparison is done by
-        transforming the input signal bdry_data and the response signal uₜ to
-        their respective analytic signals. Output is given as a ratio of the
-        analytic response to the analytic input signal.
+        Transform the input and response signals to their respective analytic
+        signals. Output is given as a ratio of the analytic response to the
+        analytic input signal.
         """
-        U, _, _ = self.surface_deformation(uₜ)
-        abs_U = [[abs(i) for i in u] for u in U]
 
-        # time step where max uplift is achieved
-        t_idx = abs_U.index(max(abs_U))
-        # point in space where max uplift occurs
-        r_idx = abs_U[t_idx].index(max(abs_U[t_idx]))
+        # use the systems' spinup period to perform a symmetric truncation of
+        # the time domain.
 
-        ũₜ = [u[r_idx] for u in U]
-        ũₜ = hilbert(ũₜ)
+        # signal behavior at time interval end-points leads us to determine
+        # phase lag by measuring the interior interval (2π, 8π)
+        t0 = min(ts, key=lambda x: abs(x-spinup_period))
+        t1 = min(ts, key=lambda x: abs(x-(ts[-1] - spinup_period)))
 
-        # system response may be shifted in the complex plane so we correct
-        # by shifting the transfer function to be centered about the origin.
-        ctr_pt = np.sum(ũₜ) / len(ũₜ)
-        ũₜ = ũₜ - ctr_pt
-        return ũₜ / hilbert(bdry_data)
+        idx0 = ts.index(t0)
+        idx1 = ts.index(t1)
+
+        response = hilbert(response[idx0:idx1])
+        input = hilbert(input[idx0:idx1])
+
+        # shift the signals by an average 'center' point
+        # system input/response may be shifted in the complex plane so we
+        # correct by shifting the analytic signals to be centered about the
+        # origin.
+        ctr_pt1 = np.sum(response) / len(response)
+        ctr_pt2 = np.sum(input) / len(input)
+
+        response = response - ctr_pt1
+        input = input - ctr_pt2
+
+        tf = response / input
+
+        # use vector representation to get phase average
+        phase_lag = np.angle(np.sum(tf / np.abs(tf)))
+        envelope = np.sum(np.abs(tf)) / len(tf)
+
+        return tf, phase_lag, envelope
 
     def phase_lag(self, uₜ, σₜ, cₜ, k=0.0):
         """Compute phase lag between stress and strain.

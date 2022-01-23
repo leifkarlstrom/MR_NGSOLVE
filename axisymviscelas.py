@@ -799,7 +799,8 @@ class AxisymViscElas:
             Δv.append(v0 - δv)
         return Δv
 
-    def transfer_function(self, input, response, ts, spinup_period=2*np.pi):
+    def transfer_function(self, input, response, ts, spinup_period=2*np.pi,
+                          tbounds=False):
         """Compute the transfer function between input and response signals.
 
         Transform the input and response signals to their respective analytic
@@ -811,31 +812,33 @@ class AxisymViscElas:
         # the time domain.
 
         # signal behavior at time interval end-points leads us to determine
-        # phase lag by measuring the interior interval (2π, 8π)
+        # phase lag by measuring the interior interval (2π, 2πK-2π)
         t0 = min(ts, key=lambda x: abs(x-spinup_period))
         t1 = min(ts, key=lambda x: abs(x-(ts[-1] - spinup_period)))
 
         idx0 = ts.index(t0)
         idx1 = ts.index(t1)
 
-        response = hilbert(response[idx0:idx1])
-        input = hilbert(input[idx0:idx1])
+        # in case they are wanted, store bounding indices for internal time
+        # interval as a class attrtibute.
+        if tbounds is True:
+            self.tbounds = [idx0, idx1]
 
-        # shift the signals by an average 'center' point
-        # system input/response may be shifted in the complex plane so we
-        # correct by shifting the analytic signals to be centered about the
-        # origin.
-        ctr_pt1 = np.sum(response) / len(response)
-        ctr_pt2 = np.sum(input) / len(input)
+        # find signal 'center' within the interior interval.
+        response_ctr = np.sum(response[idx0:idx1]) / len(response[idx0:idx1])
+        input_ctr = np.sum(input[idx0:idx1]) / len(input[idx0:idx1])
 
-        response = response - ctr_pt1
-        input = input - ctr_pt2
+        # shift signals to be centered about 0
+        response = response - response_ctr
+        input = input - input_ctr
 
-        tf = response / input
+        # note transfer function  is given on entire time interval [0, 2πK]
+        # but only internal interval used for computing phase and amplitude.
+        # Internal interval can be achieved using self.internal_indices
+        tf = hilbert(response) / hilbert(input)
 
-        # use vector representation to get phase average
-        phase_lag = np.angle(np.sum(tf / np.abs(tf)))
-        envelope = np.sum(np.abs(tf)) / len(tf)
+        phase_lag = np.angle(np.sum(tf[idx0:idx1] / np.abs(tf[idx0:idx1])))
+        envelope = np.sum(np.abs(tf[idx0:idx1])) / len(tf[idx0:idx1])
 
         return tf, phase_lag, envelope
 

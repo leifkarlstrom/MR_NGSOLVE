@@ -8,9 +8,10 @@ from ngsolve.special_functions import erf
 class AveToolkit(AxisymViscElas):
     """Class implementing facilities to aid in parameter studies."""
 
-    def __init__(self, mu=1e10, lam=1e10, eta=1e19, tau=1e9, om=1e-7, A=2000,
-                 B=2000, D=6000, Lr=20000, Lz=None, p=4, refine=1, hcavity=4,
-                 hglobal=4, curvedegree=2, tractionBCparts='cavity|top|bot',
+    def __init__(self, mu=12e10, lam=12e10, eta=1e17, tau=8.3e5, om=1.99e-7,
+                 A=1500, B=1500, D=3500, Lr=20000, Lz=None, p=4, refine=1,
+                 hcavity=4, hglobal=4, curvedegree=2,
+                 tractionBCparts='cavity|top|bot',
                  kinematicBCparts='axis|rgt'):
         """Doc."""
         self.length_scale = A

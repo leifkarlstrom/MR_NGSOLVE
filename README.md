@@ -22,3 +22,5 @@ library NGSolve.
   iPython) shell.
 
 
+This code accompanies the paper *A computational framework for time dependent deformation in viscoelastic magmatic systems,*
+Journal of Geophysical Research - Solid Earth. 

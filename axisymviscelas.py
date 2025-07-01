@@ -119,7 +119,8 @@ class AxisymViscElas:
     def __init__(self, mu=0.5, lam=4.0, eta=0.5, tau=1, om=None, A=4, B=4, D=5,
                  Lr=10, Lz=None, hcavity=0.5, hglobal=1, p=2,
                  tractionBCparts='',
-                 kinematicBCparts='axis|cavity|top|rgt|bot', refine=0,
+                 kinematicBCparts='axis|cavity|top|rgt|bot', 
+                 robincavityBC=None, refine=0,
                  curvedegree=2):
         """
         INPUTS:
@@ -167,6 +168,14 @@ class AxisymViscElas:
                              'tractionBCparts union kinematicBCparts')
         self.σbdry = tractionBCparts
         self.ubdry = kinematicBCparts
+        if robincavityBC is not None:
+            assert isinstance(robincavityBC, float), \
+            'robincavityBC kwarg needs to be a floating number'+ \
+            ' or a Nonetype object'
+            self.robincavityBCflag = True
+            self.robincavityBCparam = robincavityBC
+        else:
+            self.robincavityBCflag = False
         self.ubdry_noaxis = self.subtract_axis(self.ubdry)
 
         if mu is not None and lam is not None and tau is not None:
@@ -209,6 +218,15 @@ class AxisymViscElas:
         u, v = self.U.TnT()
         a = ng.BilinearForm(self.U, symmetric=True)
         a += fip(self.Ce(rε(u)), ε(v)) * drdz
+
+        # add robin boundary term <\kappa u, v>_r to a(.,.) if needed 
+        if self.robincavityBCflag:
+            
+            dγ = ds(bonus_intorder=1,
+                    definedon=self.mesh.Boundaries('cavity'))
+            udr = (u[0] * v[0] + u[1] * v[1]) * r
+            udr.Compile()
+            a += self.robincavityBCparam * udr * dγ
 
         with ng.TaskManager():
             a.Assemble()
@@ -426,7 +444,8 @@ class AxisymViscElas:
         t.Set(0.0)
         ts = [0]
 
-        # Make the form  (Ce Av (Ce ε(u) - c) + G,  s)ᵣ
+        # Make the form  (Ce Av (Ce ε(u) - c) + G,  s)ᵣ,
+        # i.e, the rhs of (\frac{d}{dt}c, s)_r )
         #    IMPORTANT:  The c system uses 4-vectors and requires
         #    the use of ip(., .), not fip(., .)
         c, u = self.SU.TrialFunction()
@@ -441,6 +460,8 @@ class AxisymViscElas:
         b += cupdate * drdz
 
         # Make the form d(u, v) = -(F, v)ᵣ + (c, ε(v))ᵣ
+        # i.e. the rhs of (Eε(u), ε(v))_r + <\kappa u, v>_r
+        # also g_trac term to be added.
         #    IMPORTANT:  The u system requires Frobenius inner products
         #    so we use fip(.,.), not 4-vector inner product ip(.,.)
         u, v = self.U.TnT()
@@ -530,7 +551,8 @@ class AxisymViscElas:
                 self.S.SolveM(rho=r, vec=s)
                 c.vec.data += dt * s
 
-                # Put u = solution of (Ce ε(u), ε(v))ᵣ = (c, ε(v))ᵣ - (F, v)ᵣ
+                # Put u = solution of (Ce ε(u), ε(v))ᵣ ( + <\kappa u, v>_r ) 
+                # = (c, ε(v))ᵣ - (F, v)ᵣ
                 d.Apply(c.vec, w)
                 if tractionBC is not None:
                     σnv.Assemble()
